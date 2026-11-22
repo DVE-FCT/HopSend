@@ -5,6 +5,15 @@ Push-Location $hopsendRoot
 try {
     & go version
     if ($LASTEXITCODE -ne 0) { throw 'Go 不可用' }
+    if (Test-Path -LiteralPath apps/desktop/frontend/package.json) {
+        Push-Location apps/desktop/frontend
+        try {
+            & pnpm install --frozen-lockfile
+            if ($LASTEXITCODE -ne 0) { throw '前端依赖失败' }
+            & pnpm build
+            if ($LASTEXITCODE -ne 0) { throw '前端 TypeScript 或构建失败' }
+        } finally { Pop-Location }
+    }
     $unformatted = @(& gofmt -l apps internal configs contracts tests)
     if ($LASTEXITCODE -ne 0 -or $unformatted.Count -gt 0) { throw ('Go 格式检查失败: ' + ($unformatted -join ', ')) }
     & go vet ./...

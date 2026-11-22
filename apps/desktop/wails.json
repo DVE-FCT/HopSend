@@ -1,0 +1,15 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "HopSend",
+  "outputfilename": "hopsend",
+  "frontend:install": "pnpm install --frozen-lockfile",
+  "frontend:build": "pnpm build",
+  "frontend:dev:watcher": "pnpm dev",
+  "frontend:dev:serverUrl": "auto",
+  "info": {
+    "companyName": "DVE-FCT",
+    "productName": "跃传 HopSend",
+    "productVersion": "0.1.0",
+    "comments": "可信设备之间的可靠文件传输"
+  }
+}

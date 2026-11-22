@@ -15,6 +15,18 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.1'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '11.25.0'
+      - name: 安装固定 Wails 工具
+        shell: pwsh
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.17.1
       - name: 格式、静态检查、测试与 CLI 构建
         shell: pwsh
         run: ./scripts/check/check-go.ps1
+      - name: 构建实际 Windows 桌面程序
+        shell: pwsh
+        run: ./scripts/build/build-desktop.ps1

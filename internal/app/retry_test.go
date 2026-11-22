@@ -149,4 +149,7 @@ func TestManagerStopWaitsForOldWriterAndRetainsCompletedRace(t *testing.T) {
 	if status, _ := m.Status(id); status.State != "completed" {
 		t.Fatal("late cancel hid successful publication", status)
 	}
+	if err = m.Pause(context.Background(), id); err != nil {
+		t.Fatal("late pause should be harmless for this process's finished task", err)
+	}
 }
