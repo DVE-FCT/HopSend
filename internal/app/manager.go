@@ -45,7 +45,7 @@ func NewManager(database string, changed func(TaskStatus)) *Manager {
 	if database == "" {
 		database = DefaultDatabase()
 	}
-	return &Manager{database: database, active: make(map[string]*execution), latest: make(map[string]TaskStatus), finished: make(map[string]*execution), changed: changed, run: Download}
+	return &Manager{database: database, active: make(map[string]*execution), latest: make(map[string]TaskStatus), finished: make(map[string]*execution), changed: changed, run: Transfer}
 }
 
 func (m *Manager) update(status TaskStatus) {
@@ -70,9 +70,13 @@ func (m *Manager) Start(parent context.Context, r DownloadRequest) (string, erro
 	if !manifest.ValidID(r.ManifestID) || r.Destination == "" || r.Workers < 1 || r.Workers > 8 {
 		return "", errors.New("任务版本、目标或并发参数无效")
 	}
-	destination, err := filepath.Abs(r.Destination)
-	if err != nil {
-		return "", err
+	destination := r.Destination
+	if r.Direction != "upload" {
+		var err error
+		destination, err = filepath.Abs(r.Destination)
+		if err != nil {
+			return "", err
+		}
 	}
 	r.Destination, r.Database = destination, m.database
 	id := engine.TaskID(r.ManifestID, destination)

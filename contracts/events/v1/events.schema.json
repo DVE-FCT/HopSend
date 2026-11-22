@@ -7,7 +7,7 @@
   "required":["task_id","state","verified_bytes","total_bytes","completed_chunks","updated_at"],
   "properties":{
     "task_id":{"type":"string","pattern":"^[a-f0-9]{64}$"},
-    "state":{"enum":["connecting","pending","rechecking","downloading","verifying","publishing","waiting_network","paused","completed","failed","cancelled"]},
+    "state":{"enum":["connecting","pending","rechecking","downloading","uploading","verifying","publishing","waiting_network","paused","completed","failed","cancelled"]},
     "verified_bytes":{"type":"integer","minimum":0},
     "total_bytes":{"type":"integer","minimum":0},
     "completed_chunks":{"type":"integer","minimum":0},

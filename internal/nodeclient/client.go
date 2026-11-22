@@ -31,9 +31,17 @@ type Config struct {
 	Timeout                       time.Duration
 }
 
-type HTTPError struct{ StatusCode int }
+type HTTPError struct {
+	StatusCode    int
+	Code, Message string
+}
 
-func (e *HTTPError) Error() string { return fmt.Sprintf("Agent 返回 HTTP %d", e.StatusCode) }
+func (e *HTTPError) Error() string {
+	if e.Message != "" {
+		return fmt.Sprintf("Agent 返回 HTTP %d：%s", e.StatusCode, e.Message)
+	}
+	return fmt.Sprintf("Agent 返回 HTTP %d", e.StatusCode)
+}
 
 func New(cfg Config) (*Client, error) {
 	u, err := url.Parse(cfg.URL)
@@ -67,18 +75,49 @@ func New(cfg Config) (*Client, error) {
 func (c *Client) Close() { c.http.CloseIdleConnections() }
 
 func (c *Client) get(ctx context.Context, path string, target any) error {
-	r, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+path, nil)
+	return c.request(ctx, http.MethodGet, path, nil, target, false)
+}
+
+func (c *Client) request(ctx context.Context, method, path string, value, target any, long bool) error {
+	var bodyReader io.Reader
+	if value != nil {
+		data, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		bodyReader = bytes.NewReader(data)
+	}
+	r, err := http.NewRequestWithContext(ctx, method, c.base+path, bodyReader)
 	if err != nil {
 		return err
 	}
 	r.Header.Set("Authorization", "Bearer "+c.token)
-	response, err := c.http.Do(r)
+	if value != nil {
+		r.Header.Set("Content-Type", "application/json")
+	}
+	client := c.http
+	if long {
+		copy := *client
+		copy.Timeout = 10 * time.Minute
+		transport := client.Transport.(*http.Transport).Clone()
+		transport.ResponseHeaderTimeout = 10 * time.Minute
+		copy.Transport = transport
+		defer transport.CloseIdleConnections()
+		client = &copy
+	}
+	response, err := client.Do(r)
 	if err != nil {
 		return fmt.Errorf("Agent HTTPS 连接失败: %w", err)
 	}
 	defer response.Body.Close()
-	if response.StatusCode != 200 {
-		return &HTTPError{StatusCode: response.StatusCode}
+	if response.StatusCode != 200 && response.StatusCode != 201 {
+		var detail v1.Error
+		_ = json.NewDecoder(io.LimitReader(response.Body, 16<<10)).Decode(&detail)
+		message := detail.Error.Message
+		if len(message) > 1000 {
+			message = "远端错误消息过长"
+		}
+		return &HTTPError{StatusCode: response.StatusCode, Code: detail.Error.Code, Message: message}
 	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, manifest.MaxJSONBytes+1))
 	if err != nil {

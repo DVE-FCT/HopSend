@@ -26,7 +26,7 @@ func retryable(err error) bool {
 	}
 	var status *nodeclient.HTTPError
 	if errors.As(err, &status) {
-		return status.StatusCode == 408 || status.StatusCode == 429 || status.StatusCode >= 500
+		return status.StatusCode == 408 || status.StatusCode == 429 || (status.StatusCode >= 500 && status.StatusCode != 501 && status.StatusCode != 507)
 	}
 	var sftpStatus *pkgsftp.StatusError
 	if errors.As(err, &sftpStatus) {

@@ -11,13 +11,15 @@ import (
 )
 
 type Credential struct {
-	ID        string   `json:"id"`
-	TokenFile string   `json:"token_file"`
-	ShareIDs  []string `json:"share_ids"`
+	ID             string   `json:"id"`
+	TokenFile      string   `json:"token_file"`
+	ShareIDs       []string `json:"share_ids"`
+	UploadShareIDs []string `json:"upload_share_ids,omitempty"`
 }
 type Share struct {
-	ID   string `json:"id"`
-	Path string `json:"path"`
+	ID       string `json:"id"`
+	Path     string `json:"path"`
+	Writable bool   `json:"writable,omitempty"`
 }
 type Config struct {
 	Listen           string       `json:"listen"`
@@ -26,6 +28,7 @@ type Config struct {
 	Credentials      []Credential `json:"credentials"`
 	Shares           []Share      `json:"shares"`
 	ContentDirectory string       `json:"content_directory,omitempty"`
+	StateDirectory   string       `json:"state_directory,omitempty"`
 }
 
 var validID = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
@@ -62,6 +65,7 @@ func LoadConfig(filename string) (Config, error) {
 	cfg.CertificateFile = resolve(cfg.CertificateFile)
 	cfg.KeyFile = resolve(cfg.KeyFile)
 	cfg.ContentDirectory = resolve(cfg.ContentDirectory)
+	cfg.StateDirectory = resolve(cfg.StateDirectory)
 	for i := range cfg.Credentials {
 		cfg.Credentials[i].TokenFile = resolve(cfg.Credentials[i].TokenFile)
 	}

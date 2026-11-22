@@ -14,23 +14,31 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	v1 "github.com/DVE-FCT/HopSend/contracts/control/v1"
 	manifestv1 "github.com/DVE-FCT/HopSend/contracts/manifest/v1"
 	"github.com/DVE-FCT/HopSend/internal/buildinfo"
 	"github.com/DVE-FCT/HopSend/internal/manifest"
+	"github.com/DVE-FCT/HopSend/internal/storage/sqlite"
 )
 
 type principal struct {
-	tokenHash [32]byte
-	shares    map[string]bool
+	id           string
+	tokenHash    [32]byte
+	shares       map[string]bool
+	uploadShares map[string]bool
 }
 type Server struct {
-	HTTP        *http.Server
-	roots       map[string]*os.Root
-	identities  []principal
-	contentRoot *os.Root
+	HTTP           *http.Server
+	roots          map[string]*os.Root
+	identities     []principal
+	contentRoot    *os.Root
+	writable       map[string]bool
+	uploadStore    *sqlite.Store
+	uploadCreateMu sync.Mutex
+	uploadLocks    sync.Map
 }
 
 func New(cfg Config) (*Server, error) {
@@ -40,7 +48,7 @@ func New(cfg Config) (*Server, error) {
 	if _, err := tls.LoadX509KeyPair(cfg.CertificateFile, cfg.KeyFile); err != nil {
 		return nil, errors.New("Agent TLS 证书或私钥不可用")
 	}
-	s := &Server{roots: make(map[string]*os.Root)}
+	s := &Server{roots: make(map[string]*os.Root), writable: make(map[string]bool)}
 	ok := false
 	defer func() {
 		if !ok {
@@ -56,6 +64,23 @@ func New(cfg Config) (*Server, error) {
 			return nil, errors.New("共享根目录不可用")
 		}
 		s.roots[share.ID] = root
+		if share.Writable {
+			s.writable[share.ID] = true
+		}
+	}
+	if len(s.writable) > 0 {
+		directory := cfg.StateDirectory
+		if directory == "" {
+			directory = filepath.Join(filepath.Dir(cfg.KeyFile), "state")
+		}
+		if err := os.MkdirAll(directory, 0700); err != nil {
+			return nil, errors.New("Agent 状态目录不可用")
+		}
+		var err error
+		s.uploadStore, err = sqlite.Open(filepath.Join(directory, "agent.db"))
+		if err != nil {
+			return nil, errors.New("Agent 上传数据库不可用")
+		}
 	}
 	if cfg.ContentDirectory != "" {
 		root, err := os.OpenRoot(cfg.ContentDirectory)
@@ -85,12 +110,18 @@ func New(cfg Config) (*Server, error) {
 			return nil, errors.New("不同身份不能复用相同凭据")
 		}
 		tokens[hash] = true
-		p := principal{tokenHash: hash, shares: make(map[string]bool)}
+		p := principal{id: credential.ID, tokenHash: hash, shares: make(map[string]bool), uploadShares: make(map[string]bool)}
 		for _, id := range credential.ShareIDs {
 			if s.roots[id] == nil {
 				return nil, errors.New("身份引用了不存在的共享")
 			}
 			p.shares[id] = true
+		}
+		for _, id := range credential.UploadShareIDs {
+			if !s.writable[id] {
+				return nil, errors.New("上传授权引用了不存在或只读共享")
+			}
+			p.uploadShares[id] = true
 		}
 		s.identities = append(s.identities, p)
 	}
@@ -101,6 +132,9 @@ func New(cfg Config) (*Server, error) {
 
 func (s *Server) Close() error {
 	var errs []error
+	if s.uploadStore != nil {
+		errs = append(errs, s.uploadStore.Close())
+	}
 	if s.contentRoot != nil {
 		errs = append(errs, s.contentRoot.Close())
 	}
@@ -146,6 +180,10 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		fail(w, 401, "unauthorized", "凭据缺失或无效")
 		return
 	}
+	if r.URL.Path == "/v1/uploads" || strings.HasPrefix(r.URL.Path, "/v1/uploads/") {
+		s.uploadAPI(w, r, p)
+		return
+	}
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", "GET")
 		fail(w, 405, "method_not_allowed", "此接口仅支持 GET")
@@ -159,11 +197,28 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		if s.contentRoot != nil {
 			operations = append(operations, "published_manifest")
 		}
-		send(w, 200, v1.Capabilities{APIVersion: "v1", Operations: operations, DataTransport: "external_sftp", UploadSupported: false})
+		if s.uploadStore != nil {
+			operations = append(operations, "create_upload", "upload_status", "confirm_upload_chunk", "finalize_upload")
+		}
+		send(w, 200, v1.Capabilities{APIVersion: "v1", Operations: operations, DataTransport: "external_sftp", UploadSupported: s.uploadStore != nil})
 	case "/v1/shares":
 		items := make([]v1.Share, 0, len(p.shares))
+		union := make(map[string]bool)
 		for id := range p.shares {
-			items = append(items, v1.Share{ID: id, Access: "read_only"})
+			union[id] = true
+		}
+		for id := range p.uploadShares {
+			union[id] = true
+		}
+		for id := range union {
+			access := "read_only"
+			if p.uploadShares[id] {
+				access = "write_only"
+				if p.shares[id] {
+					access = "read_write"
+				}
+			}
+			items = append(items, v1.Share{ID: id, Access: access})
 		}
 		slices.SortFunc(items, func(a, b v1.Share) int { return strings.Compare(a.ID, b.ID) })
 		send(w, 200, v1.ShareList{Shares: items})

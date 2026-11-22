@@ -60,6 +60,7 @@ func TestRetryClassificationKeepsTrustAndIntegrityFailuresTerminal(t *testing.T)
 		{&nodeclient.HTTPError{StatusCode: 401}, false},
 		{&nodeclient.HTTPError{StatusCode: 404}, false},
 		{&nodeclient.HTTPError{StatusCode: 503}, true},
+		{&nodeclient.HTTPError{StatusCode: 507}, false},
 		{&net.OpError{Op: "dial", Net: "tcp", Err: errors.New("refused")}, true},
 		{fmt.Errorf("ssh handshake: %w", io.EOF), true},
 		{context.DeadlineExceeded, true},
