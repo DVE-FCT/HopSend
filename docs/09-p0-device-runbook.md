@@ -20,7 +20,18 @@
 | 两设备局域网 Windows OpenSSH | 设备和命令输出 | 待现场验收 |
 | Tailscale 跨网络直连/中继 | 两端环境、路径和输出 | 待现场验收 |
 
-## HTTPS Agent（在 P0.3 实现后）
+## HTTPS Agent（P0.3 已实现，现场联调待执行）
 
 接收设备创建独立 TLS 证书与 API 凭据，客户端只接收受信任 CA 公钥和自己的凭据。证书需要包含实际访问的 DNS/IP，不能为通过测试跳过证书验证。
-共享目录需明确授权；Agent 的共享权限不会自动改变 SSH 账号权限。配置与操作说明会在 P0.3 补齐。
+共享目录需明确授权；Agent 的共享权限不会自动改变 SSH 账号权限。配置与操作说明见 docs/08-p0-usage.md。
+
+源设备在 agent-init 时通过 --hosts 包含实际虚拟 IP 或 DNS，例如 localhost,127.0.0.1,100.100.10.20。
+将生成配置的 listen 改为实际 Tailscale 地址加端口；客户端 URL 使用同一地址，不能用不在证书 SAN 中的其他 IP。
+只把 ca.crt 与该客户端自己的 token 通过可信渠道交给客户端，并核对 CA 指纹；server.key 留在服务器。
+两台设备依次验证 health、可见 share_id、授权目录与未授权目录；记录实际响应和所用网络路径。
+
+| 场景 | 当前记录 |
+|---|---|
+| 编译后的 Agent 与 CLI 两个进程，通过本机 TLS 认证查询 | 有自动验证 |
+| 独立 OpenSSL 3.5 客户端验证链并检查响应 schema | 本机已执行 |
+| 两设备 HTTPS Agent 与 Tailscale 地址/SAN 联调 | 待现场验收 |

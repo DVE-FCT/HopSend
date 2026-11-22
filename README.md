@@ -2,7 +2,7 @@
 
 跨设备文件传输助手，面向 Windows 和可信协作设备。
 
-**当前状态：已实现 CLI `version`、`doctor`、`sftp-read` 以及带主机校验的 SFTP 范围读取。桌面端、完整下载与恢复仍在后续阶段。**
+**当前状态：P0.1～P0.3 已实现并进行本机验收：工具链/CLI、带主机校验的 SFTP 范围读取、受认证的 HTTPS Agent 与授权目录查询。真实两设备 Windows OpenSSH/Tailscale 联调待现场执行。桌面端、完整下载与恢复属于后续阶段。**
 
 工程路径：`C:\Users\Lenovo\OneDrive\Desktop\HopSend`。
 
@@ -18,7 +18,7 @@
 | 诊断与自动化程序 | hopsend-cli.exe |
 | Windows 服务名 | HopSendAgent |
 | Windows 服务显示名 | HopSend Agent |
-| 根 Go 模块（后续初始化） | github.com/DVE-FCT/HopSend |
+| 根 Go 模块 | github.com/DVE-FCT/HopSend |
 | API / 清单契约 | v1，与应用发行版本分别管理 |
 
 代码仓库：[DVE-FCT/HopSend](https://github.com/DVE-FCT/HopSend)，SSH 地址为 `git@github.com:DVE-FCT/HopSend.git`。沿用远端初始化时选择的 [MIT 许可证](LICENSE)。已有 `DVE-FCT/DB` 用于数据库资料下载。
@@ -56,6 +56,7 @@ HopSend/
 5. [开发环境与构建](docs/05-development.md)：环境要求和未来命令。
 6. [运行数据与配置分区](docs/06-runtime-layout.md)：数据库、日志、凭据和下载目录。
 7. [Git 工作流与中文提交规范](docs/07-git-workflow.md)：测试分支、PR、冲突解决和合并验证。
+8. [P0 当前使用方法](docs/08-p0-usage.md)与[两设备现场验收](docs/09-p0-device-runbook.md)。
 
 ## 技术基线
 
@@ -81,3 +82,22 @@ go run ./apps/cli doctor --strict
 
 `doctor` 检查开发工具版本，不代表远端设备、WebView2、桌面构建或传输可用。
 Node 和 pnpm 需另外安装到 PATH。引导脚本只写项目内忽略目录 `work/.tools`，不修改机器 PATH。
+
+## HTTPS Agent 本机启动
+
+```powershell
+. ./scripts/dev/env.ps1
+go run ./apps/cli agent-init --dir work/local-agent
+go run ./apps/agent --config work/local-agent/agent.local.json
+```
+
+在另一终端执行（默认不共享目录）：
+
+```powershell
+. ./scripts/dev/env.ps1
+go run ./apps/cli agent-status --url https://localhost:9443 `
+  --ca-cert work/local-agent/ca.crt --token-file work/local-agent/client.token
+```
+
+要授权目录，在首次初始化时追加 `--share-dir "实际共享路径"`，查询时追加 `--share files`。已有配置目录不可重复初始化。
+仅将 CA 公钥及对应设备凭据安全交给客户端，不传送 server.key；Windows 私密文件 ACL 需另行核对。

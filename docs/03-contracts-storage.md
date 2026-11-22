@@ -4,11 +4,11 @@
 
 | 路径 | 后续文件 | 内容 |
 |---|---|---|
-| contracts/control/v1 | openapi.yaml | HTTPS 请求、响应、鉴权、错误码与超时约定 |
+| contracts/control/v1 | openapi.json、types.go | 已实现的 HTTPS 请求、响应、鉴权、错误码 |
 | contracts/manifest/v1 | manifest.schema.json | 清单格式、块边界、内容 ID、路径约束 |
 | contracts/events/v1 | events.schema.json / README.md | UI 事件名、载荷、节流和快照版本 |
 
-当前保留目录，先完成最小接口决策后再写可验证契约。Go/TS DTO 若生成，注明生成来源，避免两端各维护一份不一致协议。
+P0.3 的四个 GET 接口已落地 OpenAPI 3.1 与共享 Go DTO，实际响应已按契约检查。清单、UI 事件和上传接口仍在规划中。Go/TS DTO 若生成，注明生成来源。
 
 ## 2. 控制接口草案
 
@@ -24,6 +24,8 @@ POST /v1/uploads/{upload_id}/finalize
 ```
 
 前述路径是规划；不代表已经有服务监听。以 share_id/content_id/upload_id 访问受控对象，不接受任意绝对系统路径。
+
+P0.3 当前实际实现 GET /v1/health、/v1/capabilities、/v1/shares，以及 /v1/shares/{share_id}/entries?path=相对目录；其余清单与上传路径尚未实现。
 
 ## 3. Manifest 内容
 

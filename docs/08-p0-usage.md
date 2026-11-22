@@ -61,3 +61,41 @@ go test -v -count=1 -timeout=90s ./tests/integration
 
 测试通过真实回环 TCP 建立加密 SSH 会话和 SFTP 子系统，读取临时文件。覆盖范围内容、CLI 可信哈希、未知/变化主机、错误用户私钥、截断源、整数溢出、读取中取消和不发送握手的超时服务。
 回环测试不证明局域网性能、Tailscale 穿透、DERP 路径或第二台设备已连通。两设备演练步骤见 [P0 验收运行手册](09-p0-device-runbook.md)。
+
+## P0.3 HTTPS Agent
+
+当前实现四个受认证 GET 接口：health、capabilities、shares、shares/{share_id}/entries。
+正式契约为 contracts/control/v1/openapi.json（OpenAPI 3.1）。API 明确返回 upload_supported=false；没有上传、manifest 或内容中转能力。
+
+```powershell
+. ./scripts/dev/env.ps1
+# 可选的 --share-dir 必须是你明确授权的已有目录；不填写则不共享文件
+go run ./apps/cli agent-init --dir work/local-agent --share-dir "D:\Share"
+go run ./apps/agent --config work/local-agent/agent.local.json
+```
+
+另一个终端：
+
+```powershell
+. ./scripts/dev/env.ps1
+go run ./apps/cli agent-status --url https://localhost:9443 `
+  --ca-cert work/local-agent/ca.crt --token-file work/local-agent/client.token `
+  --share files --path .
+```
+
+使用默认监听 127.0.0.1:9443；若占用，在配置中改端口。初始化目录必须为空，生成失败不会覆盖已有文件。
+初始化会创建 CA 公钥、30 天服务器证书、服务器私钥、随机 256 位 API Token 和配置。CA 签名私钥不落盘；证书到期后需重新生成并重新配对信任，首版没有自动续证。
+Windows 上 0600 并不等于完整 NTFS ACL 配置，生成目录仅供当前用户开发；部署到其他设备前需确认凭据和私钥实际 ACL。
+
+共享配置使用 id/path，身份配置使用 id/token_file/share_ids。每台设备应分配不同随机凭据，授权共享列表分别设置；权限不自动同步到 SSH 账号。
+服务端拒绝重复凭据、重复 ID 或不存在的共享引用，读取配置时拒绝未知字段。
+
+目录接口只返回相对名称、类型和大小，不返回绝对系统路径。拒绝 ..、绝对路径、反斜线、冒号、NUL 以及 symlink/junction 遍历；使用 os.Root 进一步约束路径解析。首版单次目录上限 1000 项，没有分页，超过上限返回 413。
+
+客户端验证 TLS 1.3 证书链和实际主机名，只信任显式提供的 CA，不跳过检查，不接受重定向；所有控制接口都需要 Bearer 凭据。
+凭据存放文件而非命令行参数，日志与状态不输出凭据内容。CA 公钥仍需经可信渠道核对初始化时输出的 SHA-256。
+
+## 编译产物
+
+运行 check-go.ps1 后，可直接执行 dist/cli/hopsend-cli.exe 与 dist/agent/hopsend-agent.exe；这两个文件尚未制作安装器。
+Agent 当前为前台进程，Ctrl+C 停止。没有安装后台服务、修改防火墙或启用 Windows SSH 服务。

@@ -14,6 +14,11 @@ try {
     New-Item -ItemType Directory -Path dist/cli -Force | Out-Null
     & go build -trimpath -o dist/cli/hopsend-cli.exe ./apps/cli
     if ($LASTEXITCODE -ne 0) { throw 'CLI 构建失败' }
+    if (Test-Path -LiteralPath apps/agent/main.go) {
+        New-Item -ItemType Directory -Path dist/agent -Force | Out-Null
+        & go build -trimpath -o dist/agent/hopsend-agent.exe ./apps/agent
+        if ($LASTEXITCODE -ne 0) { throw 'Agent 构建失败' }
+    }
     & ./dist/cli/hopsend-cli.exe version
     if ($LASTEXITCODE -ne 0) { throw 'CLI 启动失败' }
     if ($StrictDoctor) {
