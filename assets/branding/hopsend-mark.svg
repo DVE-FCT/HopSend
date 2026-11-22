@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" fill="none">
+  <title>跃传 HopSend 透明底标志</title>
+  <desc>深蓝与青绿色的双向传输箭头，适合浅色界面。</desc>
+  <path d="M68 94H178M154 70L178 94L154 118" stroke="#173E58" stroke-width="17" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="68" cy="94" r="12" fill="#16A99B"/>
+  <path d="M188 162H78M102 138L78 162L102 186" stroke="#16A99B" stroke-width="17" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="188" cy="162" r="12" fill="#173E58"/>
+</svg>

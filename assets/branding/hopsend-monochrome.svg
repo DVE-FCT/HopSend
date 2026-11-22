@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" fill="none">
+  <title>跃传 HopSend 单色标志</title>
+  <desc>继承 currentColor 的双向传输箭头，适合工具栏和系统托盘。</desc>
+  <g stroke="currentColor" stroke-width="17" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M68 94H178M154 70L178 94L154 118"/>
+    <path d="M188 162H78M102 138L78 162L102 186"/>
+  </g>
+  <circle cx="68" cy="94" r="12" fill="currentColor"/>
+  <circle cx="188" cy="162" r="12" fill="currentColor"/>
+</svg>

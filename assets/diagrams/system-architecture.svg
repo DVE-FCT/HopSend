@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1260" viewBox="0 0 1800 1260" fill="#183449">
+  <title>跃传 HopSend 跨设备文件传输助手系统结构图</title>
+  <desc>本机桌面客户端通过 Go 任务引擎管理分块、续传和校验。Tailscale 承载 HTTPS 控制连接和 SSH/SFTP 文件连接。远端每台设备分别部署 Go Agent、OpenSSH 和受控共享目录。本机使用 SQLite 与文件系统保存任务和数据。</desc>
+  <defs>
+    <marker id="control" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1L9 5L1 9Z" fill="#4772BC"/></marker>
+    <marker id="data" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1L9 5L1 9Z" fill="#079A8B"/></marker>
+    <marker id="local" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1L9 5L1 9Z" fill="#8292A4"/></marker>
+    <style>
+      text {font-family:'Microsoft YaHei','Noto Sans CJK SC',sans-serif}
+      .title{font-size:45px;font-weight:700}
+      .subtitle{font-size:23px;fill:#60788D}
+      .group{font-size:27px;font-weight:700}
+      .label{font-size:25px;font-weight:700}
+      .body{font-size:21px;fill:#4E687E}
+      .small{font-size:19px;fill:#60788D}
+      .control{stroke:#4772BC;stroke-width:3.2;stroke-dasharray:10 7;fill:none;marker-start:url(#control);marker-end:url(#control)}
+      .data{stroke:#079A8B;stroke-width:4.4;fill:none;marker-start:url(#data);marker-end:url(#data)}
+      .local{stroke:#8292A4;stroke-width:2.5;fill:none;marker-end:url(#local)}
+      .local-both{stroke:#8292A4;stroke-width:2.5;fill:none;marker-start:url(#local);marker-end:url(#local)}
+    </style>
+  </defs>
+
+  <rect width="1800" height="1260" fill="#F7FAFC"/>
+  <rect x="60" y="52" width="10" height="100" rx="5" fill="#15B7A5"/>
+  <text x="93" y="99" class="title">跃传 HopSend</text>
+  <text x="95" y="142" class="subtitle">跨设备文件传输助手 · 系统结构图</text>
+  <rect x="1480" y="69" width="260" height="46" rx="23" fill="#E8EFF5"/>
+  <text x="1610" y="99" text-anchor="middle" class="small">Windows 首版 · 设计方案</text>
+
+  <path d="M65 191H125" stroke="#4772BC" stroke-width="3" stroke-dasharray="9 6"/>
+  <text x="139" y="198" class="small">控制信息</text>
+  <path d="M305 191H365" stroke="#079A8B" stroke-width="4"/>
+  <text x="379" y="198" class="small">文件数据</text>
+  <path d="M545 191H605" stroke="#8292A4" stroke-width="2.5"/>
+  <text x="619" y="198" class="small">本地调用 / 状态与磁盘读写</text>
+
+  <rect x="60" y="231" width="1680" height="54" rx="14" fill="#E5F2F1"/>
+  <text x="86" y="266" font-size="22" font-weight="700" fill="#1D6B64">Tailscale / WireGuard 私有网络</text>
+  <text x="565" y="266" font-size="21" fill="#3D6D73">承载两类跨设备连接 · 优先直连，中继兜底 · 协调服务不存储文件</text>
+
+  <rect x="60" y="310" width="700" height="780" rx="24" fill="#FFFFFF" stroke="#DCE5ED" stroke-width="1.5"/>
+  <text x="92" y="354" class="group">本机 · 桌面客户端</text>
+  <text x="92" y="382" class="small">可作为发送端或接收端</text>
+
+  <rect x="92" y="410" width="636" height="90" rx="16" fill="#EEF3FC"/>
+  <text x="410" y="448" text-anchor="middle" class="label">Wails + Vue 3 + TypeScript</text>
+  <text x="410" y="480" text-anchor="middle" class="body">设备管理 · 文件浏览 · 任务进度 · 日志诊断</text>
+  <path d="M410 501V535" class="local-both"/>
+  <rect x="92" y="538" width="636" height="58" rx="12" fill="#F0F4F8"/>
+  <text x="410" y="575" text-anchor="middle" class="body">本地应用接口：命令调用与状态事件</text>
+  <path d="M410 597V630" class="local-both"/>
+
+  <rect x="92" y="634" width="636" height="200" rx="18" fill="#173E58"/>
+  <text x="410" y="678" text-anchor="middle" font-size="30" font-weight="700" fill="#F3FAFF">Go 传输引擎</text>
+  <text x="410" y="721" text-anchor="middle" font-size="22" fill="#D0E4EF">任务状态机 · 分块调度 · 多节点协作</text>
+  <text x="410" y="757" text-anchor="middle" font-size="22" fill="#D0E4EF">断点续传 · 失败重试 · 并发与限速</text>
+  <text x="410" y="793" text-anchor="middle" font-size="22" fill="#A0E7DE">分块 SHA-256 · 全文件 SHA-256</text>
+
+  <path d="M251 835V927" class="local-both"/>
+  <path d="M569 835V927" class="local-both"/>
+  <text x="251" y="889" text-anchor="middle" class="small">事务持久化</text>
+  <text x="569" y="889" text-anchor="middle" class="small">WriteAt / Sync</text>
+
+  <rect x="92" y="932" width="300" height="125" rx="15" fill="#F0F4F8"/>
+  <text x="242" y="972" text-anchor="middle" class="label">SQLite</text>
+  <text x="242" y="1007" text-anchor="middle" class="body">任务 · 分块 · 节点</text>
+  <text x="242" y="1035" text-anchor="middle" class="small">恢复记录与确认状态</text>
+  <rect x="428" y="932" width="300" height="125" rx="15" fill="#EAF6F2"/>
+  <text x="578" y="972" text-anchor="middle" class="label">本地文件系统</text>
+  <text x="578" y="1007" text-anchor="middle" class="body">.partial 暂存文件</text>
+  <text x="578" y="1035" text-anchor="middle" class="small">校验成功后发布正式文件</text>
+
+  <rect x="1130" y="310" width="610" height="780" rx="24" fill="#FFFFFF" stroke="#DCE5ED" stroke-width="1.5"/>
+  <text x="1160" y="354" class="group">远端设备 B / C / D</text>
+  <text x="1160" y="382" class="small">每台独立部署 · 按设备与目录授权</text>
+
+  <rect x="1160" y="414" width="520" height="144" rx="16" fill="#EEF3FC"/>
+  <text x="1420" y="457" text-anchor="middle" class="label">Go Agent · 控制接口</text>
+  <text x="1420" y="496" text-anchor="middle" class="body">清单 · 内容版本 · 分块哈希 · 健康状态</text>
+  <text x="1420" y="529" text-anchor="middle" class="body">共享授权 · 上传会话 · 接收端确认</text>
+
+  <rect x="1160" y="640" width="520" height="144" rx="16" fill="#E6F5F1"/>
+  <text x="1420" y="685" text-anchor="middle" class="label">Windows OpenSSH Server</text>
+  <text x="1420" y="723" text-anchor="middle" class="body">SSH 密钥认证 + SFTP 文件服务</text>
+  <text x="1420" y="756" text-anchor="middle" class="body">指定偏移读取 / 写入文件字节</text>
+
+  <rect x="1160" y="932" width="520" height="125" rx="16" fill="#F0F4F8"/>
+  <text x="1420" y="973" text-anchor="middle" class="label">受控共享目录</text>
+  <text x="1420" y="1009" text-anchor="middle" class="body">已发布内容版本 · 上传暂存区</text>
+  <text x="1420" y="1037" text-anchor="middle" class="small">多源下载须匹配同一 manifest 与哈希</text>
+
+  <path d="M728 685H927V460H1158" class="control"/>
+  <text x="930" y="412" text-anchor="middle" font-size="24" font-weight="700" fill="#4772BC">控制面</text>
+  <text x="1016" y="442" text-anchor="middle" font-size="21" fill="#4772BC">HTTPS / JSON</text>
+  <text x="1045" y="586" text-anchor="middle" class="small">清单、版本与状态</text>
+
+  <path d="M728 775H1012V712H1158" class="data"/>
+  <text x="928" y="838" text-anchor="middle" font-size="24" font-weight="700" fill="#078B7E">数据面</text>
+  <text x="928" y="871" text-anchor="middle" font-size="21" fill="#078B7E">SSH / SFTP</text>
+  <text x="928" y="902" text-anchor="middle" class="small">文件分块上传 / 下载</text>
+
+  <path d="M1420 785V928" class="local-both"/>
+  <text x="1445" y="859" class="small">文件读写</text>
+  <path d="M1682 996H1714V485H1682" class="local"/>
+  <text x="1626" y="901" text-anchor="middle" class="small">元数据 / 哈希</text>
+
+  <path d="M60 1130H1740" stroke="#DCE5ED" stroke-width="1.5"/>
+  <text x="60" y="1174" font-size="22" font-weight="700">续传：重新核验已完成块</text>
+  <text x="640" y="1174" font-size="22" font-weight="700">完成：全文件校验后发布</text>
+  <text x="1220" y="1174" font-size="22" font-weight="700">多源：同版本，动态领块</text>
+  <text x="60" y="1219" class="small">权限边界：Agent 凭据与 SSH 账号分别授权；NTFS ACL 限定目录访问。此图为技术方案，不代表程序已实现。</text>
+</svg>
