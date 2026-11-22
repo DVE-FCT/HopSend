@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "HopSend Agent 控制接口",
-    "version": "0.1.0",
-    "description": "P0.3 仅提供 HTTPS 健康、能力和只读目录。所有接口使用独立设备凭据；文件字节由外部 SFTP 提供，尚未实现上传与 manifest 接口。"
+    "version": "0.2.0",
+    "description": "受认证的 HTTPS 控制面，提供健康、能力、授权目录和已发布不可变文件清单。文件字节通过独立 SFTP 传输；上传能力尚未实现。"
   },
   "servers": [
     {
@@ -228,6 +228,64 @@
           }
         ]
       }
+    },
+    "/v1/shares/{share_id}/manifests/{manifest_id}": {
+      "get": {
+        "operationId": "publishedManifest",
+        "summary": "读取已发布且属于授权共享的不可变清单",
+        "parameters": [
+          {
+            "name": "share_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$"
+            }
+          },
+          {
+            "name": "manifest_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "已认证的内容版本与 SFTP 对象路径",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedManifest"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "凭据缺失或无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "清单未知、损坏、未配置或不属于获授权共享",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -390,6 +448,107 @@
                 "type": "string"
               }
             }
+          }
+        }
+      },
+      "Manifest": {
+        "title": "HopSend immutable file manifest v1",
+        "type": "object",
+        "additionalProperties": false,
+        "description": "manifest_id is SHA-256 of UTF-8 compact Go JSON for these fields in declaration order with manifest_id set to empty string. Offsets must be contiguous; lengths sum to size_bytes; content_id is full-file SHA-256. These invariants are additionally checked by the client.",
+        "required": [
+          "schema_version",
+          "manifest_id",
+          "content_id",
+          "share_id",
+          "name",
+          "size_bytes",
+          "chunk_size_bytes",
+          "chunks"
+        ],
+        "properties": {
+          "schema_version": {
+            "const": 1
+          },
+          "manifest_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "content_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "share_id": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Single Windows-safe filename, not an absolute or relative directory path"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "chunk_size_bytes": {
+            "type": "integer",
+            "minimum": 65536,
+            "maximum": 67108864
+          },
+          "chunks": {
+            "type": "array",
+            "maxItems": 65536,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "index",
+                "offset",
+                "length",
+                "sha256"
+              ],
+              "properties": {
+                "index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 65535
+                },
+                "offset": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "length": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 67108864
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            }
+          }
+        }
+      },
+      "PublishedManifest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "manifest",
+          "sftp_path"
+        ],
+        "properties": {
+          "manifest": {
+            "$ref": "#/components/schemas/Manifest"
+          },
+          "sftp_path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Authenticated SFTP path to the published content snapshot; never use a mutable source path"
           }
         }
       }

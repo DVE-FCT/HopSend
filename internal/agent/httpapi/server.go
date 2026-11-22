@@ -11,12 +11,15 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
 
 	v1 "github.com/DVE-FCT/HopSend/contracts/control/v1"
+	manifestv1 "github.com/DVE-FCT/HopSend/contracts/manifest/v1"
 	"github.com/DVE-FCT/HopSend/internal/buildinfo"
+	"github.com/DVE-FCT/HopSend/internal/manifest"
 )
 
 type principal struct {
@@ -24,9 +27,10 @@ type principal struct {
 	shares    map[string]bool
 }
 type Server struct {
-	HTTP       *http.Server
-	roots      map[string]*os.Root
-	identities []principal
+	HTTP        *http.Server
+	roots       map[string]*os.Root
+	identities  []principal
+	contentRoot *os.Root
 }
 
 func New(cfg Config) (*Server, error) {
@@ -52,6 +56,13 @@ func New(cfg Config) (*Server, error) {
 			return nil, errors.New("共享根目录不可用")
 		}
 		s.roots[share.ID] = root
+	}
+	if cfg.ContentDirectory != "" {
+		root, err := os.OpenRoot(cfg.ContentDirectory)
+		if err != nil {
+			return nil, errors.New("已发布内容目录不可用")
+		}
+		s.contentRoot = root
 	}
 	ids := map[string]bool{}
 	tokens := map[[32]byte]bool{}
@@ -90,6 +101,9 @@ func New(cfg Config) (*Server, error) {
 
 func (s *Server) Close() error {
 	var errs []error
+	if s.contentRoot != nil {
+		errs = append(errs, s.contentRoot.Close())
+	}
 	for _, root := range s.roots {
 		errs = append(errs, root.Close())
 	}
@@ -141,7 +155,11 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	case "/v1/health":
 		send(w, 200, v1.Health{Status: "ok", Service: "hopsend-agent", Version: buildinfo.Version, APIVersion: "v1"})
 	case "/v1/capabilities":
-		send(w, 200, v1.Capabilities{APIVersion: "v1", Operations: []string{"health", "capabilities", "shares", "list_entries"}, DataTransport: "external_sftp", UploadSupported: false})
+		operations := []string{"health", "capabilities", "shares", "list_entries"}
+		if s.contentRoot != nil {
+			operations = append(operations, "published_manifest")
+		}
+		send(w, 200, v1.Capabilities{APIVersion: "v1", Operations: operations, DataTransport: "external_sftp", UploadSupported: false})
 	case "/v1/shares":
 		items := make([]v1.Share, 0, len(p.shares))
 		for id := range p.shares {
@@ -151,6 +169,29 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		send(w, 200, v1.ShareList{Shares: items})
 	default:
 		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+		if len(parts) == 5 && parts[0] == "v1" && parts[1] == "shares" && parts[3] == "manifests" && r.URL.Path == "/"+strings.Join(parts, "/") {
+			id := parts[2]
+			if !p.shares[id] || s.contentRoot == nil {
+				fail(w, 404, "manifest_not_found", "内容版本不可访问")
+				return
+			}
+			m, err := manifest.Load(s.contentRoot, parts[4])
+			if err != nil || m.ShareID != id {
+				fail(w, 404, "manifest_not_found", "内容版本不可访问")
+				return
+			}
+			path := filepath.Join(s.contentRoot.Name(), "objects", m.ContentID)
+			if !filepath.IsAbs(path) {
+				fail(w, 500, "content_configuration", "内容目录需为绝对路径")
+				return
+			}
+			path = filepath.ToSlash(path)
+			if !strings.HasPrefix(path, "/") {
+				path = "/" + path
+			}
+			send(w, 200, manifestv1.Published{Manifest: m, SFTPPath: path})
+			return
+		}
 		if len(parts) != 4 || parts[0] != "v1" || parts[1] != "shares" || parts[3] != "entries" || r.URL.Path != "/"+strings.Join(parts, "/") {
 			fail(w, 404, "not_found", "接口不存在")
 			return

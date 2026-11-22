@@ -38,6 +38,8 @@ type readFixture struct {
 
 func (f *readFixture) Fileread(request *pkgsftp.Request) (io.ReaderAt, error) {
 	path := strings.TrimPrefix(request.Filepath, "/")
+	rootPrefix := strings.TrimPrefix(filepath.ToSlash(f.root.Name()), "/") + "/"
+	path = strings.TrimPrefix(path, rootPrefix)
 	if !fs.ValidPath(path) || strings.ContainsAny(path, `\:`) {
 		return nil, fs.ErrPermission
 	}

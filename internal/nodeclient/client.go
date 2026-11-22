@@ -1,6 +1,7 @@
 package nodeclient
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -16,6 +17,8 @@ import (
 	"time"
 
 	v1 "github.com/DVE-FCT/HopSend/contracts/control/v1"
+	manifestv1 "github.com/DVE-FCT/HopSend/contracts/manifest/v1"
+	"github.com/DVE-FCT/HopSend/internal/manifest"
 )
 
 type Client struct {
@@ -73,7 +76,14 @@ func (c *Client) get(ctx context.Context, path string, target any) error {
 	if response.StatusCode != 200 {
 		return fmt.Errorf("Agent 返回 HTTP %d", response.StatusCode)
 	}
-	decoder := json.NewDecoder(io.LimitReader(response.Body, 1<<20))
+	body, err := io.ReadAll(io.LimitReader(response.Body, manifest.MaxJSONBytes+1))
+	if err != nil {
+		return err
+	}
+	if len(body) > manifest.MaxJSONBytes {
+		return errors.New("Agent 响应超过大小上限")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.DisallowUnknownFields()
 	if err = decoder.Decode(target); err != nil {
 		return fmt.Errorf("Agent 响应格式: %w", err)
@@ -102,5 +112,20 @@ func (c *Client) Shares(ctx context.Context) (v1.ShareList, error) {
 func (c *Client) Entries(ctx context.Context, id, path string) (v1.EntryList, error) {
 	var value v1.EntryList
 	err := c.get(ctx, "/v1/shares/"+url.PathEscape(id)+"/entries?path="+url.QueryEscape(path), &value)
+	return value, err
+}
+
+func (c *Client) Manifest(ctx context.Context, share, id string) (manifestv1.Published, error) {
+	var value manifestv1.Published
+	if !manifest.ValidID(id) {
+		return value, errors.New("清单 ID 无效")
+	}
+	err := c.get(ctx, "/v1/shares/"+url.PathEscape(share)+"/manifests/"+id, &value)
+	if err == nil {
+		err = manifest.Validate(value.Manifest)
+	}
+	if err == nil && (value.Manifest.ManifestID != id || value.Manifest.ShareID != share || value.SFTPPath == "") {
+		err = errors.New("Agent 清单与请求的版本或共享不一致")
+	}
 	return value, err
 }

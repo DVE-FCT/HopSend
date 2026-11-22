@@ -56,7 +56,7 @@ func runAgentInit(args []string, out, stderr io.Writer) int {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	cfg := httpapi.Config{Listen: "127.0.0.1:9443", CertificateFile: "server.crt", KeyFile: "server.key", Credentials: []httpapi.Credential{{ID: "local-client", TokenFile: "client.token", ShareIDs: []string{}}}, Shares: []httpapi.Share{}}
+	cfg := httpapi.Config{Listen: "127.0.0.1:9443", CertificateFile: "server.crt", KeyFile: "server.key", ContentDirectory: "content", Credentials: []httpapi.Credential{{ID: "local-client", TokenFile: "client.token", ShareIDs: []string{}}}, Shares: []httpapi.Share{}}
 	if *share != "" {
 		path, err := filepath.Abs(*share)
 		if err != nil {
@@ -93,6 +93,10 @@ func runAgentInit(args []string, out, stderr io.Writer) int {
 			fmt.Fprintln(stderr, "初始化未完成，请检查目标目录（不会覆盖已有文件）")
 			return 1
 		}
+	}
+	if err = os.Mkdir(filepath.Join(root, "content"), 0700); err != nil {
+		fmt.Fprintln(stderr, "创建内容目录失败")
+		return 1
 	}
 	if err := writeJSON(out, map[string]string{"config": filepath.Join(root, "agent.local.json"), "ca_sha256": bundle.CAFingerprint, "listen": cfg.Listen}); err != nil {
 		fmt.Fprintln(stderr, err)

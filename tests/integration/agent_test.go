@@ -29,6 +29,10 @@ type agentFixture struct {
 }
 
 func startAgent(t *testing.T) agentFixture {
+	return startAgentConfigured(t, nil)
+}
+
+func startAgentConfigured(t *testing.T, configure func(*httpapi.Config)) agentFixture {
 	t.Helper()
 	root := t.TempDir()
 	share := filepath.Join(root, "shared")
@@ -60,6 +64,9 @@ func startAgent(t *testing.T) agentFixture {
 		t.Fatal(err)
 	}
 	cfg.Credentials = append(cfg.Credentials, httpapi.Credential{ID: "other", TokenFile: otherToken, ShareIDs: []string{"private"}})
+	if configure != nil {
+		configure(&cfg)
+	}
 	srv, err := httpapi.New(cfg)
 	if err != nil {
 		t.Fatal(err)
