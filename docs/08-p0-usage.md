@@ -36,10 +36,13 @@ P0.1 的干净源码导出构建使用暂存树生成独立归档，在没有 no
 
 ## P0.2 SSH/SFTP 范围诊断
 
-前提：服务端已有可访问的 SSH/SFTP、专用账号和授权公钥。对端可为 Windows OpenSSH Server，也可以是其他兼容 SFTP 服务；本次本机集成测试使用 Go SSH/SFTP 真实 TCP 服务，尚未验收另一台电脑上的 Windows OpenSSH。
+前提：服务端已有可访问的 SSH/SFTP、专用账号和授权公钥。对端可为 Windows OpenSSH Server，也可以是其他兼容 SFTP 服务；本机集成测试使用 Go SSH/SFTP 真实 TCP 服务，已另行完成第二台 Windows OpenSSH 的实测，范围见 docs/validation/P0.2-device.md。
 
 先在服务端通过可信渠道读取 SSH 主机公钥指纹，客户端用 `ssh-keyscan` 取得候选记录并用 `ssh-keygen -lf` 比较。只有指纹核对一致才把记录存为 known_hosts；`ssh-keyscan` 单独执行不能证明身份。
 程序不会自动信任未知主机，也不会忽略主机密钥变化。
+服务器同时提供多个主机密钥算法时，程序依据目标主机在 known_hosts 中已核对的记录协商，只采用当前 SSH 库列为安全的算法，并继续执行完整公钥比对。不会因协商失败自动添加其他主机密钥；普通和散列主机名记录均支持。
+
+Windows OpenSSH 的绝对盘符路径通常表现为 SFTP 路径 `/C:/共享目录/文件名`；Windows 资源管理器的 `C:\共享目录\文件名` 需要按服务端 SFTP 的路径规则使用。
 
 ```powershell
 . ./scripts/dev/env.ps1
@@ -61,6 +64,7 @@ go test -v -count=1 -timeout=90s ./tests/integration
 
 测试通过真实回环 TCP 建立加密 SSH 会话和 SFTP 子系统，读取临时文件。覆盖范围内容、CLI 可信哈希、未知/变化主机、错误用户私钥、截断源、整数溢出、读取中取消和不发送握手的超时服务。
 回环测试不证明局域网性能、Tailscale 穿透、DERP 路径或第二台设备已连通。两设备演练步骤见 [P0 验收运行手册](09-p0-device-runbook.md)。
+独立现场记录已补充两设备正确性验证；当前观测为同一局域网直连，不代表不同公网网络、DERP 吞吐或大文件性能已经通过。
 
 ## P0.3 HTTPS Agent
 

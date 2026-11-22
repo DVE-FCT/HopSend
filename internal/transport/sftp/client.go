@@ -9,11 +9,12 @@ import (
 	"math"
 	"net"
 	"os"
+	"slices"
 	"time"
 
 	pkgsftp "github.com/pkg/sftp"
+	"github.com/skeema/knownhosts"
 	"golang.org/x/crypto/ssh"
-	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 type Config struct {
@@ -50,9 +51,23 @@ func Dial(ctx context.Context, cfg Config) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("解析 SSH 私钥（加密私钥暂不支持交互解锁）: %w", err)
 	}
-	verifyHost, err := knownhosts.New(cfg.KnownHostsPath)
+	hostKeys, err := knownhosts.NewDB(cfg.KnownHostsPath)
 	if err != nil {
 		return nil, fmt.Errorf("读取主机信任记录: %w", err)
+	}
+	// Servers such as Windows OpenSSH offer several host-key types. Negotiate
+	// only algorithms represented by this host's verified trust records, rather
+	// than choosing a different (untrusted) key and failing the callback later.
+	// Never enable legacy algorithms merely because they exist in known_hosts.
+	var hostAlgorithms []string
+	supported := ssh.SupportedAlgorithms().HostKeys
+	for _, algorithm := range hostKeys.HostKeyAlgorithms(cfg.Address) {
+		if slices.Contains(supported, algorithm) {
+			hostAlgorithms = append(hostAlgorithms, algorithm)
+		}
+	}
+	if len(hostAlgorithms) == 0 {
+		return nil, errors.New("目标主机没有已核对且受支持的主机密钥，请先验证 known_hosts")
 	}
 	conn, err := (&net.Dialer{Timeout: cfg.Timeout}).DialContext(ctx, "tcp", cfg.Address)
 	if err != nil {
@@ -74,7 +89,8 @@ func Dial(ctx context.Context, cfg Config) (*Client, error) {
 		return nil, err
 	}
 	sshConn, chans, requests, err := ssh.NewClientConn(conn, cfg.Address, &ssh.ClientConfig{
-		User: cfg.User, Auth: []ssh.AuthMethod{ssh.PublicKeys(signer)}, HostKeyCallback: verifyHost,
+		User: cfg.User, Auth: []ssh.AuthMethod{ssh.PublicKeys(signer)},
+		HostKeyCallback: hostKeys.HostKeyCallback(), HostKeyAlgorithms: hostAlgorithms,
 	})
 	if err != nil {
 		return nil, contextError(ctx, fmt.Errorf("SSH 握手或认证: %w", err))

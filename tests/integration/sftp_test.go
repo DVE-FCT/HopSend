@@ -3,7 +3,9 @@ package integration
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
@@ -97,6 +99,18 @@ func startSFTP(t *testing.T, delay time.Duration) (transport.Config, []byte, <-c
 		}
 		return nil, errors.New("denied")
 	}}
+	// Reproduce Windows OpenSSH offering another preferred host algorithm while
+	// the client has verified only ED25519. Both plain and hashed trust records
+	// must continue to select the verified identity, not silently add new keys.
+	extraPrivate, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	extraHost, err := ssh.NewSignerFromKey(extraPrivate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverConfig.AddHostKey(extraHost)
 	serverConfig.AddHostKey(host)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -212,6 +226,33 @@ func TestSFTPRealRangeAndCLI(t *testing.T) {
 	t.Log("real TCP SSH/SFTP range and CLI expected SHA-256 match")
 }
 
+func TestSFTPSelectsHashedTrustedHostWithMultipleAlgorithms(t *testing.T) {
+	cfg, source, _ := startSFTP(t, 0)
+	data, err := os.ReadFile(cfg.KnownHostsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := strings.Fields(string(data))
+	fields[0] = knownhosts.HashHostname(knownhosts.Normalize(cfg.Address))
+	if err := os.WriteFile(cfg.KnownHostsPath, []byte(strings.Join(fields, " ")+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c, err := transport.Dial(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	var output bytes.Buffer
+	if _, err := c.ReadRange(ctx, "/sample.bin", 17, 8192, &output); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(output.Bytes(), source[17:17+8192]) {
+		t.Fatal("hashed trusted host returned incorrect range")
+	}
+}
+
 func TestSFTPRejectsHostAndUserKeys(t *testing.T) {
 	cfg, _, _ := startSFTP(t, 0)
 	wrong, wrongPEM := newSigner(t)
@@ -298,21 +339,42 @@ func TestSFTPHandshakeDeadline(t *testing.T) {
 	}
 	defer l.Close()
 	done := make(chan struct{})
+	accepted := make(chan struct{})
 	go func() {
 		conn, err := l.Accept()
 		if err == nil {
 			defer conn.Close()
+			close(accepted)
 			<-done
 		}
 	}()
 	defer close(done)
 	cfg.Address = l.Addr().String()
+	trusted, err := os.ReadFile(cfg.KnownHostsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := strings.Fields(string(trusted))
+	fields[0] = knownhosts.Normalize(cfg.Address)
+	if err := os.WriteFile(cfg.KnownHostsPath, []byte(strings.Join(fields, " ")+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 80*time.Millisecond)
 	defer cancel()
 	start := time.Now()
-	if c, err := transport.Dial(ctx, cfg); err == nil {
+	c, err := transport.Dial(ctx, cfg)
+	if err == nil {
 		c.Close()
 		t.Fatal("stalled handshake accepted")
+	}
+	select {
+	case <-accepted:
+	default:
+		t.Fatal("deadline test never reached the TCP server")
+	}
+	var networkError net.Error
+	if !errors.Is(err, context.DeadlineExceeded) && !(errors.As(err, &networkError) && networkError.Timeout()) {
+		t.Fatal("expected a handshake deadline, got", err)
 	}
 	if time.Since(start) > time.Second {
 		t.Fatal("handshake timeout did not stop I/O")
