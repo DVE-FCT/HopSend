@@ -82,6 +82,11 @@ func newSigner(t *testing.T) (ssh.Signer, []byte) {
 }
 
 func startSFTP(t *testing.T, delay time.Duration) (transport.Config, []byte, <-chan struct{}) {
+	cfg, data, started, _ := startSFTPControlled(t, delay)
+	return cfg, data, started
+}
+
+func startSFTPControlled(t *testing.T, delay time.Duration) (transport.Config, []byte, <-chan struct{}, func()) {
 	t.Helper()
 	dir := t.TempDir()
 	data := bytes.Repeat([]byte("HopSend-中文-0123456789"), 131072)
@@ -198,7 +203,14 @@ func startSFTP(t *testing.T, delay time.Duration) (transport.Config, []byte, <-c
 	if err := os.WriteFile(knownPath, []byte(knownhosts.Line([]string{knownhosts.Normalize(listener.Addr().String())}, host.PublicKey())+"\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	return transport.Config{Address: listener.Addr().String(), User: "fixture", PrivateKeyPath: keyPath, KnownHostsPath: knownPath, Timeout: 2 * time.Second}, data, fixture.started
+	drop := func() {
+		mu.Lock()
+		defer mu.Unlock()
+		for _, conn := range active {
+			_ = conn.Close()
+		}
+	}
+	return transport.Config{Address: listener.Addr().String(), User: "fixture", PrivateKeyPath: keyPath, KnownHostsPath: knownPath, Timeout: 2 * time.Second}, data, fixture.started, drop
 }
 
 func TestSFTPRealRangeAndCLI(t *testing.T) {
