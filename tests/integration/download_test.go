@@ -34,7 +34,8 @@ func TestTrustedHTTPSManifestToRealSFTPFileDownload(t *testing.T) {
 	if _, err := c.Manifest(context.Background(), "private", m.ManifestID); err == nil {
 		t.Fatal("cross-share manifest exposed")
 	}
-	request := app.DownloadRequest{Agent: node, SSH: ssh, ShareID: "files", ManifestID: m.ManifestID, Destination: filepath.Join(t.TempDir(), "download.bin"), Workers: 2}
+	database := filepath.Join(t.TempDir(), "tasks.sqlite")
+	request := app.DownloadRequest{Agent: node, SSH: ssh, ShareID: "files", ManifestID: m.ManifestID, Destination: filepath.Join(t.TempDir(), "download.bin"), Workers: 2, Database: database}
 	result, err := app.Download(context.Background(), request)
 	if err != nil {
 		t.Fatal(err)
@@ -45,6 +46,7 @@ func TestTrustedHTTPSManifestToRealSFTPFileDownload(t *testing.T) {
 	}
 	var output, stderr bytes.Buffer
 	args := []string{"download", "--url", agent.address, "--ca-cert", agent.ca, "--token-file", agent.token, "--manifest", m.ManifestID, "--share", "files", "--address", ssh.Address, "--user", ssh.User, "--key", ssh.PrivateKeyPath, "--known-hosts", ssh.KnownHostsPath, "--output", filepath.Join(t.TempDir(), "cli-download.bin"), "--quiet"}
+	args = append(args, "--database", database)
 	if code := cli.Run(context.Background(), args, &output, &stderr); code != 0 {
 		t.Fatal(code, stderr.String())
 	}

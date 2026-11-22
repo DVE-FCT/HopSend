@@ -36,6 +36,9 @@ apps/desktop/frontend/src/generated/
 *.db-shm
 *.db-wal
 *.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.hopsend.lock
 *.sqlite3
 *.log
 *.partial

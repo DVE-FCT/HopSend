@@ -12,6 +12,7 @@ import (
 	"github.com/DVE-FCT/HopSend/internal/engine"
 	"github.com/DVE-FCT/HopSend/internal/manifest"
 	"github.com/DVE-FCT/HopSend/internal/nodeclient"
+	"github.com/DVE-FCT/HopSend/internal/storage/sqlite"
 	transport "github.com/DVE-FCT/HopSend/internal/transport/sftp"
 )
 
@@ -56,6 +57,7 @@ func runDownload(ctx context.Context, args []string, out, stderr io.Writer) int 
 	workers := f.Int("workers", 2, "每节点并发块数，1–8")
 	timeout := f.Duration("read-timeout", 2*time.Minute, "每块读取超时")
 	quiet := f.Bool("quiet", false, "关闭 stderr 分块进度")
+	database := f.String("database", app.DefaultDatabase(), "SQLite 任务数据库路径")
 	if err := f.Parse(args); err != nil {
 		return 2
 	}
@@ -67,13 +69,50 @@ func runDownload(ctx context.Context, args []string, out, stderr io.Writer) int 
 		encoder := json.NewEncoder(stderr)
 		progress = func(p engine.Progress) { _ = encoder.Encode(p) }
 	}
-	r, err := app.Download(ctx, app.DownloadRequest{Agent: nodeclient.Config{URL: *url, CACertificate: *ca, TokenFile: *token}, SSH: transport.Config{Address: *address, User: *user, PrivateKeyPath: *key, KnownHostsPath: *known}, ShareID: *share, ManifestID: *id, Destination: *destination, Workers: *workers, ReadTimeout: *timeout, OnProgress: progress})
+	r, err := app.Download(ctx, app.DownloadRequest{Agent: nodeclient.Config{URL: *url, CACertificate: *ca, TokenFile: *token}, SSH: transport.Config{Address: *address, User: *user, PrivateKeyPath: *key, KnownHostsPath: *known}, ShareID: *share, ManifestID: *id, Destination: *destination, Workers: *workers, ReadTimeout: *timeout, OnProgress: progress, Database: *database})
 	if err != nil {
 		fmt.Fprintln(stderr, "下载未完成:", err)
 		return 1
 	}
 	if err = writeJSON(out, r); err != nil {
 		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	return 0
+}
+
+func runTasks(ctx context.Context, args []string, out, stderr io.Writer, resume bool) int {
+	f := flag.NewFlagSet("tasks", flag.ContinueOnError)
+	f.SetOutput(stderr)
+	database := f.String("database", app.DefaultDatabase(), "SQLite 任务数据库路径")
+	id := f.String("task", "", "任务 ID，resume 必填")
+	if err := f.Parse(args); err != nil || f.NArg() != 0 || (resume && !manifest.ValidID(*id)) {
+		return 2
+	}
+	var value any
+	var err error
+	if resume {
+		encoder := json.NewEncoder(stderr)
+		value, err = app.Resume(ctx, *database, *id, func(p engine.Progress) { _ = encoder.Encode(p) })
+	} else {
+		var store *sqlite.Store
+		store, err = sqlite.Open(*database)
+		if err == nil {
+			var tasks []engine.Task
+			tasks, err = store.List(ctx)
+			_ = store.Close()
+			summaries := make([]map[string]any, 0, len(tasks))
+			for _, t := range tasks {
+				summaries = append(summaries, map[string]any{"id": t.ID, "manifest_id": t.Manifest.ManifestID, "destination": t.Destination, "state": t.State, "confirmed_chunks": len(t.Confirmed), "total_chunks": len(t.Manifest.Chunks), "total_bytes": t.Manifest.SizeBytes, "updated_at": t.UpdatedAt})
+			}
+			value = summaries
+		}
+	}
+	if err == nil {
+		err = writeJSON(out, value)
+	}
+	if err != nil {
+		fmt.Fprintln(stderr, "任务操作失败:", err)
 		return 1
 	}
 	return 0
