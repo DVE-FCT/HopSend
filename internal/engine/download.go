@@ -2,8 +2,10 @@ package engine
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash"
@@ -23,6 +25,7 @@ type RangeSource interface {
 }
 type SourceFactory func(context.Context) (RangeSource, error)
 type Progress struct {
+	TaskID          string `json:"task_id,omitempty"`
 	State           string `json:"state"`
 	VerifiedBytes   int64  `json:"verified_bytes"`
 	TotalBytes      int64  `json:"total_bytes"`
@@ -35,13 +38,20 @@ type DownloadOptions struct {
 	Workers     int
 	OpenSource  SourceFactory
 	OnProgress  func(Progress)
+	Journal     Journal
+	Source      json.RawMessage
+	// Boundary supports deterministic crash-consistency tests. Production leaves
+	// it nil. A hook runs after the named operation has completed.
+	Boundary func(point string, chunk int) error
 }
 type DownloadResult struct {
-	ManifestID string `json:"manifest_id"`
-	Path       string `json:"path"`
-	Bytes      int64  `json:"bytes"`
-	SHA256     string `json:"sha256"`
-	Chunks     int    `json:"chunks"`
+	TaskID       string `json:"task_id,omitempty"`
+	ReusedChunks int    `json:"reused_chunks"`
+	ManifestID   string `json:"manifest_id"`
+	Path         string `json:"path"`
+	Bytes        int64  `json:"bytes"`
+	SHA256       string `json:"sha256"`
+	Chunks       int    `json:"chunks"`
 }
 
 type chunkWriter struct {
@@ -66,10 +76,9 @@ func (w *chunkWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// Download currently starts a new task. P1.2 adds durable recovery; an existing
-// staging file is intentionally not overwritten by this first-stage operation.
-func Download(parent context.Context, opts DownloadOptions) (DownloadResult, error) {
-	var result DownloadResult
+// Download revalidates every recorded block before reusing it. The destination
+// lock spans recovery, workers, publication and the final journal transaction.
+func Download(parent context.Context, opts DownloadOptions) (result DownloadResult, returnedErr error) {
 	if err := manifest.Validate(opts.Manifest); err != nil {
 		return result, err
 	}
@@ -83,40 +92,154 @@ func Download(parent context.Context, opts DownloadOptions) (DownloadResult, err
 	if err != nil {
 		return result, err
 	}
-	if _, err = os.Lstat(destination); err == nil {
-		return result, errors.New("目标已存在，拒绝覆盖")
-	} else if !os.IsNotExist(err) {
-		return result, err
-	}
 	if err = os.MkdirAll(filepath.Dir(destination), 0700); err != nil {
 		return result, err
 	}
+	lock, err := filesystem.Lock(destination + ".hopsend.lock")
+	if err != nil {
+		return result, err
+	}
+	defer lock.Close()
+	task := Task{ID: TaskID(opts.Manifest.ManifestID, destination), Manifest: opts.Manifest, RemotePath: opts.RemotePath, Destination: destination, State: "pending", Source: opts.Source}
 	staging := destination + "." + opts.Manifest.ManifestID[:16] + ".partial"
-	file, err := os.OpenFile(staging, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0600)
+	if opts.Journal != nil {
+		random := make([]byte, 8)
+		if _, err = rand.Read(random); err != nil {
+			return result, err
+		}
+		task.Staging = destination + "." + hex.EncodeToString(random) + ".partial"
+		if len(task.Source) == 0 {
+			task.Source = json.RawMessage(`{}`)
+		}
+		task, err = opts.Journal.Prepare(parent, task)
+		if err != nil {
+			return result, err
+		}
+		staging = task.Staging
+		if filepath.Dir(staging) != filepath.Dir(destination) || staging == destination {
+			return result, errors.New("任务暂存路径必须位于目标同目录")
+		}
+	}
+	setState := func(state string) error {
+		if opts.Journal != nil {
+			if err := opts.Journal.SetState(context.WithoutCancel(parent), task.ID, state); err != nil {
+				return err
+			}
+		}
+		task.State = state
+		return nil
+	}
+	boundary := func(point string, chunk int) error {
+		if opts.Boundary != nil {
+			return opts.Boundary(point, chunk)
+		}
+		return nil
+	}
+	defer func() {
+		if returnedErr != nil && task.State != "publishing" && task.State != "completed" {
+			returnedErr = errors.Join(returnedErr, setState("interrupted"))
+		}
+	}()
+	if info, statErr := os.Lstat(destination); statErr == nil {
+		// Only a recorded publication can be reconciled. A same-name file during
+		// downloading remains a conflict, even if its bytes happen to match.
+		if opts.Journal == nil || (task.State != "publishing" && task.State != "completed") || !info.Mode().IsRegular() || info.Size() != opts.Manifest.SizeBytes {
+			return result, errors.New("目标已存在，拒绝覆盖")
+		}
+		file, err := os.Open(destination)
+		if _, e := os.Lstat(staging); !os.IsNotExist(e) {
+			if file != nil {
+				_ = file.Close()
+			}
+			return result, errors.New("暂存与目标同时存在，不能将外部文件当作本任务发布结果")
+		}
+		if err != nil {
+			return result, err
+		}
+		digest, err := manifest.HashReader(parent, file)
+		_ = file.Close()
+		if err != nil {
+			return result, err
+		}
+		if digest != opts.Manifest.ContentID {
+			return result, errors.New("已发布目标校验失败，拒绝覆盖")
+		}
+		if err = setState("completed"); err != nil {
+			return result, err
+		}
+		if opts.OnProgress != nil {
+			opts.OnProgress(Progress{TaskID: task.ID, State: "completed", TotalBytes: opts.Manifest.SizeBytes, VerifiedBytes: opts.Manifest.SizeBytes, CompletedChunks: len(opts.Manifest.Chunks)})
+		}
+		return DownloadResult{TaskID: task.ID, ManifestID: opts.Manifest.ManifestID, Path: destination, Bytes: opts.Manifest.SizeBytes, SHA256: digest, Chunks: len(opts.Manifest.Chunks), ReusedChunks: len(opts.Manifest.Chunks)}, nil
+	} else if !os.IsNotExist(statErr) {
+		return result, statErr
+	}
+	flags := os.O_CREATE | os.O_EXCL | os.O_RDWR
+	if opts.Journal != nil {
+		if info, e := os.Lstat(staging); e == nil {
+			if !info.Mode().IsRegular() {
+				return result, errors.New("暂存路径不是常规文件")
+			}
+			flags = os.O_RDWR
+		} else if !os.IsNotExist(e) {
+			return result, e
+		}
+	}
+	file, err := os.OpenFile(staging, flags, 0600)
 	if err != nil {
 		return result, fmt.Errorf("创建唯一暂存文件: %w", err)
 	}
 	defer file.Close()
-	if err = file.Truncate(opts.Manifest.SizeBytes); err != nil {
-		return result, fmt.Errorf("分配目标文件空间: %w", err)
-	}
 	ctx, cancel := context.WithCancelCause(parent)
 	defer cancel(nil)
-	queue := make(chan v1.Chunk, len(opts.Manifest.Chunks))
-	for _, chunk := range opts.Manifest.Chunks {
-		queue <- chunk
-	}
-	close(queue)
-	progress := Progress{State: "downloading", TotalBytes: opts.Manifest.SizeBytes}
-	var mu sync.Mutex
-	var wg sync.WaitGroup
+	progress := Progress{TaskID: task.ID, State: "rechecking", TotalBytes: opts.Manifest.SizeBytes}
 	emit := func() {
 		if opts.OnProgress != nil {
 			opts.OnProgress(progress)
 		}
 	}
+	if err = setState("rechecking"); err != nil {
+		return result, err
+	}
 	emit()
-	for range min(opts.Workers, len(opts.Manifest.Chunks)) {
+	confirmed := make(map[int]bool)
+	for _, index := range task.Confirmed {
+		if index < 0 || index >= len(opts.Manifest.Chunks) {
+			return result, errors.New("已确认分块越界")
+		}
+		chunk := opts.Manifest.Chunks[index]
+		digest, e := manifest.HashReader(ctx, io.NewSectionReader(file, chunk.Offset, chunk.Length))
+		if ctx.Err() != nil {
+			return result, context.Cause(ctx)
+		}
+		if e == nil && digest == chunk.SHA256 {
+			confirmed[index] = true
+			progress.VerifiedBytes += chunk.Length
+			progress.CompletedChunks++
+		} else if err = opts.Journal.SetChunk(ctx, task.ID, index, false); err != nil {
+			return result, err
+		}
+	}
+	reused := len(confirmed)
+	if err = file.Truncate(opts.Manifest.SizeBytes); err != nil {
+		return result, fmt.Errorf("分配目标文件空间: %w", err)
+	}
+	queue := make(chan v1.Chunk, len(opts.Manifest.Chunks))
+	for _, chunk := range opts.Manifest.Chunks {
+		if !confirmed[chunk.Index] {
+			queue <- chunk
+		}
+	}
+	remaining := len(queue)
+	close(queue)
+	if err = setState("downloading"); err != nil {
+		return result, err
+	}
+	progress.State = "downloading"
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	emit()
+	for range min(opts.Workers, remaining) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -133,6 +256,9 @@ func Download(parent context.Context, opts DownloadOptions) (DownloadResult, err
 				h := sha256.New()
 				writer := &chunkWriter{file: file, offset: chunk.Offset, remaining: chunk.Length, hash: h}
 				n, err := source.ReadRange(ctx, opts.RemotePath, chunk.Offset, chunk.Length, writer)
+				if err == nil {
+					err = boundary("written", chunk.Index)
+				}
 				if err != nil {
 					cancel(fmt.Errorf("读取分块 %d: %w", chunk.Index, err))
 					return
@@ -143,6 +269,20 @@ func Download(parent context.Context, opts DownloadOptions) (DownloadResult, err
 				}
 				if err = file.Sync(); err != nil {
 					cancel(fmt.Errorf("同步分块: %w", err))
+					return
+				}
+				if err = boundary("synced", chunk.Index); err != nil {
+					cancel(err)
+					return
+				}
+				if opts.Journal != nil {
+					if err = opts.Journal.SetChunk(ctx, task.ID, chunk.Index, true); err != nil {
+						cancel(err)
+						return
+					}
+				}
+				if err = boundary("confirmed", chunk.Index); err != nil {
+					cancel(err)
 					return
 				}
 				mu.Lock()
@@ -158,6 +298,9 @@ func Download(parent context.Context, opts DownloadOptions) (DownloadResult, err
 		return result, err
 	}
 	progress.State = "verifying"
+	if err = setState("verifying"); err != nil {
+		return result, err
+	}
 	emit()
 	if err = file.Sync(); err != nil {
 		return result, err
@@ -178,10 +321,25 @@ func Download(parent context.Context, opts DownloadOptions) (DownloadResult, err
 	if err = ctx.Err(); err != nil {
 		return result, err
 	}
+	if err = setState("publishing"); err != nil {
+		return result, err
+	}
+	if err = boundary("publishing", -1); err != nil {
+		return result, err
+	}
 	if err = filesystem.PublishNoReplace(staging, destination); err != nil {
 		return result, fmt.Errorf("发布文件失败，目标可能已被创建: %w", err)
 	}
+	if err = boundary("renamed", -1); err != nil {
+		return result, err
+	}
+	if err = setState("completed"); err != nil {
+		return result, err
+	}
+	if err = boundary("completed", -1); err != nil {
+		return result, err
+	}
 	progress.State = "completed"
 	emit()
-	return DownloadResult{ManifestID: opts.Manifest.ManifestID, Path: destination, Bytes: opts.Manifest.SizeBytes, SHA256: actual, Chunks: len(opts.Manifest.Chunks)}, nil
+	return DownloadResult{TaskID: task.ID, ReusedChunks: reused, ManifestID: opts.Manifest.ManifestID, Path: destination, Bytes: opts.Manifest.SizeBytes, SHA256: actual, Chunks: len(opts.Manifest.Chunks)}, nil
 }

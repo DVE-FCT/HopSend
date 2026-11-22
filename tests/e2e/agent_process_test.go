@@ -21,7 +21,9 @@ func TestBuiltAgentAndCLIProcesses(t *testing.T) {
 		t.Fatal(err)
 	}
 	work := t.TempDir()
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	// The pure-Go SQLite driver increases cold compilation/link time on Windows.
+	// This budget covers building both executables; HTTP readiness stays 10 s.
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 	cliPath := filepath.Join(work, "hopsend-cli.exe")
 	agentPath := filepath.Join(work, "hopsend-agent.exe")

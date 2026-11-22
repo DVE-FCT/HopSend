@@ -2,11 +2,16 @@ package app
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/DVE-FCT/HopSend/internal/engine"
 	"github.com/DVE-FCT/HopSend/internal/nodeclient"
+	"github.com/DVE-FCT/HopSend/internal/storage/sqlite"
 	transport "github.com/DVE-FCT/HopSend/internal/transport/sftp"
 )
 
@@ -16,7 +21,40 @@ type DownloadRequest struct {
 	ShareID, ManifestID, Destination string
 	Workers                          int
 	ReadTimeout                      time.Duration
-	OnProgress                       func(engine.Progress)
+	Database                         string
+	OnProgress                       func(engine.Progress) `json:"-"`
+}
+
+func DefaultDatabase() string {
+	if dir := os.Getenv("LOCALAPPDATA"); dir != "" {
+		return filepath.Join(dir, "HopSend", "cli", "state.db")
+	}
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "hopsend-tasks.sqlite"
+	}
+	return filepath.Join(dir, "HopSend", "tasks.sqlite")
+}
+
+func Resume(ctx context.Context, database, id string, progress func(engine.Progress)) (engine.DownloadResult, error) {
+	store, err := sqlite.Open(database)
+	if err != nil {
+		return engine.DownloadResult{}, err
+	}
+	task, err := store.Get(ctx, id)
+	_ = store.Close()
+	if err != nil {
+		return engine.DownloadResult{}, err
+	}
+	var request DownloadRequest
+	if err = json.Unmarshal(task.Source, &request); err != nil {
+		return engine.DownloadResult{}, err
+	}
+	request.Database, request.OnProgress = database, progress
+	if request.ManifestID != task.Manifest.ManifestID || request.Destination != task.Destination {
+		return engine.DownloadResult{}, errors.New("任务源引用与持久化身份不一致")
+	}
+	return Download(ctx, request)
 }
 
 type timedSource struct {
@@ -31,6 +69,19 @@ func (s *timedSource) ReadRange(ctx context.Context, path string, offset, length
 }
 
 func Download(ctx context.Context, r DownloadRequest) (engine.DownloadResult, error) {
+	if r.Database == "" {
+		r.Database = DefaultDatabase()
+	}
+	for _, path := range []*string{&r.Database, &r.Destination, &r.Agent.CACertificate, &r.Agent.TokenFile, &r.SSH.PrivateKeyPath, &r.SSH.KnownHostsPath} {
+		if *path == "" {
+			return engine.DownloadResult{}, errors.New("任务的文件路径不能为空")
+		}
+		absolute, err := filepath.Abs(*path)
+		if err != nil {
+			return engine.DownloadResult{}, err
+		}
+		*path = absolute
+	}
 	client, err := nodeclient.New(r.Agent)
 	if err != nil {
 		return engine.DownloadResult{}, err
@@ -43,7 +94,16 @@ func Download(ctx context.Context, r DownloadRequest) (engine.DownloadResult, er
 	if r.ReadTimeout <= 0 {
 		r.ReadTimeout = 2 * time.Minute
 	}
-	return engine.Download(ctx, engine.DownloadOptions{Manifest: published.Manifest, RemotePath: published.SFTPPath, Destination: r.Destination, Workers: r.Workers, OnProgress: r.OnProgress,
+	store, err := sqlite.Open(r.Database)
+	if err != nil {
+		return engine.DownloadResult{}, err
+	}
+	defer store.Close()
+	source, err := json.Marshal(r)
+	if err != nil {
+		return engine.DownloadResult{}, err
+	}
+	return engine.Download(ctx, engine.DownloadOptions{Manifest: published.Manifest, RemotePath: published.SFTPPath, Destination: r.Destination, Workers: r.Workers, OnProgress: r.OnProgress, Journal: store, Source: source,
 		OpenSource: func(ctx context.Context) (engine.RangeSource, error) {
 			c, err := transport.Dial(ctx, r.SSH)
 			if err != nil {
