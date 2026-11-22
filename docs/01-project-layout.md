@@ -111,5 +111,5 @@ P0 首先实现此入口，用于 doctor、节点连接验证及单文件传输�
 
 ## 6. 当前骨架的边界
 
-目前仅创建目录、.gitkeep、说明、样例设计参数和品牌资料。上述 main.go、go.mod、package.json、SQL、OpenAPI 等文件按相应阶段生成，不放空壳伪装为可运行实现。
+S0 只创建目录、.gitkeep、说明、样例设计参数和品牌资料。P0.1 起按阶段生成可运行代码，当前完成范围见 README 与验收记录；package.json、SQL 和其他后续文件不放空壳伪装为可运行实现。
 后续开发先在根创建 go.mod；不能在 apps/desktop 又创建第二份 go.mod。

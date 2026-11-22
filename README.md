@@ -2,7 +2,7 @@
 
 跨设备文件传输助手，面向 Windows 和可信协作设备。
 
-**当前状态：已建立工程规划、目录骨架与品牌资料；传输程序尚未实现，当前没有可运行客户端。**
+**当前状态：P0.1 已实现 CLI `version`、`doctor` 和工具链/构建检查。桌面端、Agent 与文件传输仍在后续阶段。**
 
 工程路径：`C:\Users\Lenovo\OneDrive\Desktop\HopSend`。
 
@@ -66,8 +66,18 @@ Wails + Vue 3 + TypeScript，Go 引擎，SQLite，HTTPS/JSON Agent，Windows Ope
 
 默认规划参数：32 MiB 逻辑块、每节点 2 个活动块、全局 4 个活动块；这些是待实测的初始值。
 
-## 开始开发前
+## 当前可运行命令
 
-当前检查时未在 PATH 中检测到 Go 和 Wails；已检测到 Node.js、npm/pnpm 和 Git，但其版本兼容性尚未验证。
-下一步按开发环境文档选择并固定受支持版本，创建根 `go.mod`、CLI 入口和连通验证。
-本骨架没有写入虚构版本号、依赖清单或无法启动的示例程序。
+工具链版本见 `configs/toolchain.json`：Go 1.27.4、Node 24.14.1、pnpm 11.25.0、Wails 2.17.1。
+
+```powershell
+# 在工程根目录，准备本地 Go/Wails；需要系统代理时追加 -UseSystemProxy
+./scripts/dev/bootstrap-tools.ps1
+. ./scripts/dev/env.ps1
+go run ./apps/cli version
+go run ./apps/cli doctor --strict
+./scripts/check/check-go.ps1 -StrictDoctor
+```
+
+`doctor` 检查开发工具版本，不代表远端设备、WebView2、桌面构建或传输可用。
+Node 和 pnpm 需另外安装到 PATH。引导脚本只写项目内忽略目录 `work/.tools`，不修改机器 PATH。

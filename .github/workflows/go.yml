@@ -1,0 +1,20 @@
+name: Go 阶段验证
+on:
+  push:
+    branches: ['test/**', main]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: 格式、静态检查、测试与 CLI 构建
+        shell: pwsh
+        run: ./scripts/check/check-go.ps1
