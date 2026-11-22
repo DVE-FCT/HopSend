@@ -6,7 +6,7 @@
 - 提交标题统一为“类型(阶段): 中文动作与结果”，例如“文档(S0): 建立工程基线与阶段验收规范”；类型固定为 功能、修复、重构、测试、文档、构建、维护。
 - 测试分支提交经 PR 合并；先同步最新 origin/main，解决冲突后重新验证合并结果，再合入 main。冲突解决不得只选 ours/theirs 而不核对业务语义。
 - PR 需写明本阶段交付、实际验证、未完成项和验收记录路径；仓库中未实现的功能不得写为已实现。
-- 产品为“跃传 HopSend”。工程目前处于规划和骨架阶段，不能把待实现功能报告为已实现。
+- 产品为“跃传 HopSend”。当前能力以 README 和 docs/validation 的真实记录为准，不能把待实现功能报告为已实现。
 - 一个根 Go 模块，三个入口：apps/desktop、apps/agent、apps/cli。Wails 项目根固定为 apps/desktop。
 - UI 和 Wails 只在桌面入口层使用；internal 不导入 Wails 或前端组件。
 - 领域类型不依赖 SQLite、SFTP、HTTP 或 Windows 实现；引擎通过接口使用外部能力。
