@@ -5,7 +5,7 @@ Push-Location $hopsendRoot
 try {
     & go version
     if ($LASTEXITCODE -ne 0) { throw 'Go 不可用' }
-    $unformatted = @(& gofmt -l apps internal configs)
+    $unformatted = @(& gofmt -l apps internal configs contracts tests)
     if ($LASTEXITCODE -ne 0 -or $unformatted.Count -gt 0) { throw ('Go 格式检查失败: ' + ($unformatted -join ', ')) }
     & go vet ./...
     if ($LASTEXITCODE -ne 0) { throw 'go vet 失败' }

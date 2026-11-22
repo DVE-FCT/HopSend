@@ -1,8 +1,8 @@
 # 阶段规划与可验证交付
 
-更新日期：2026-11-22。S0、P0.1、P0.2 已通过 PR 合并，P0.3 实现 HTTPS 控制与授权目录；后续业务按子阶段推进，具体状态以 docs/validation 中的真实记录为准。
+更新日期：2026-11-23。S0～P0 已合并；P1.1 已实现清单和分块下载，并完成两设备独立 HTTPS 与 5 GiB＋17 字节文件验收。P1.2～P2 按子阶段继续推进，具体结果见 docs/validation。
 
-基础连通的代码与本机协议验收覆盖 P0.1～P0.3。2026-11-23 补充两台 Windows 的 Tailscale 局域网直连 SFTP 和 SSH 隧道内 HTTPS 验收，见 docs/validation/P0.2-device.md；独立 HTTPS 端口及不同公网网络仍待验证。
+基础连通的代码与本机协议验收覆盖 P0.1～P0.3。2026-11-23 补充两台 Windows 的 Tailscale 局域网直连 SFTP 和 SSH 隧道内 HTTPS 验收，见 docs/validation/P0.2-device.md；P1.1 已补齐独立 HTTPS 端口与大文件；不同公网网络仍待现场切换验证。
 
 每个子阶段都是可独立验收、提交、推送和发起 PR 的单位。不能仅因“文件已创建”就把业务能力写为完成。
 

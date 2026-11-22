@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hopsend:manifest:v1",
+  "title": "HopSend immutable file manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "description": "manifest_id is SHA-256 of UTF-8 compact Go JSON for these fields in declaration order with manifest_id set to empty string. Offsets must be contiguous; lengths sum to size_bytes; content_id is full-file SHA-256. These invariants are additionally checked by the client.",
+  "required": [
+    "schema_version",
+    "manifest_id",
+    "content_id",
+    "share_id",
+    "name",
+    "size_bytes",
+    "chunk_size_bytes",
+    "chunks"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "manifest_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "content_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "share_id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Single Windows-safe filename, not an absolute or relative directory path"
+    },
+    "size_bytes": {
+      "type": "integer",
+      "format": "int64",
+      "minimum": 0
+    },
+    "chunk_size_bytes": {
+      "type": "integer",
+      "minimum": 65536,
+      "maximum": 67108864
+    },
+    "chunks": {
+      "type": "array",
+      "maxItems": 65536,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "index",
+          "offset",
+          "length",
+          "sha256"
+        ],
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535
+          },
+          "offset": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "length": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 67108864
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    }
+  }
+}

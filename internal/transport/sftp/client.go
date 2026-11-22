@@ -140,10 +140,12 @@ func (c *Client) ReadRange(ctx context.Context, path string, offset, length int6
 		return 0, contextError(ctx, fmt.Errorf("打开远程文件: %w", err))
 	}
 	defer file.Close()
-	if _, err = file.Seek(offset, io.SeekStart); err != nil {
-		return 0, contextError(ctx, err)
+	// A bounded 1 MiB buffer allows SFTP ReadAt to pipeline packet requests on
+	// higher-latency links. SectionReader still enforces the exact byte range.
+	n, err := io.CopyBuffer(output, io.NewSectionReader(file, offset, length), make([]byte, 1<<20))
+	if err == nil && n != length {
+		err = io.ErrUnexpectedEOF
 	}
-	n, err := io.CopyN(output, file, length)
 	if err != nil {
 		return n, contextError(ctx, fmt.Errorf("读取指定范围: %w", err))
 	}
