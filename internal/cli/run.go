@@ -20,10 +20,12 @@ func writeJSON(out io.Writer, value any) error {
 
 func Run(ctx context.Context, args []string, out, stderr io.Writer) int {
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" {
-		fmt.Fprintln(out, "跃传 HopSend\n用法：hopsend-cli version | doctor [--strict]\n当前仅提供已实现的基础诊断命令。")
+		fmt.Fprintln(out, "跃传 HopSend\n用法：hopsend-cli version | doctor [--strict] | sftp-read [参数]\nsftp-read 只校验范围读取，不创建下载文件。")
 		return 0
 	}
 	switch args[0] {
+	case "sftp-read":
+		return runSFTP(ctx, args[1:], out, stderr)
 	case "version":
 		if len(args) != 1 {
 			fmt.Fprintln(stderr, "version 不接受参数")

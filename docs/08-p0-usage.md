@@ -33,3 +33,31 @@ GitHub Actions 的 windows 作业对测试分支与 main 执行同一脚本，�
 
 P0.1 的干净源码导出构建使用暂存树生成独立归档，在没有 node_modules、Wails 自动绑定或现有编译产物的目录测试。
 开发工具是构建前提，并不把“干净源码”写成已验证全新 Windows 系统安装。
+
+## P0.2 SSH/SFTP 范围诊断
+
+前提：服务端已有可访问的 SSH/SFTP、专用账号和授权公钥。对端可为 Windows OpenSSH Server，也可以是其他兼容 SFTP 服务；本次本机集成测试使用 Go SSH/SFTP 真实 TCP 服务，尚未验收另一台电脑上的 Windows OpenSSH。
+
+先在服务端通过可信渠道读取 SSH 主机公钥指纹，客户端用 `ssh-keyscan` 取得候选记录并用 `ssh-keygen -lf` 比较。只有指纹核对一致才把记录存为 known_hosts；`ssh-keyscan` 单独执行不能证明身份。
+程序不会自动信任未知主机，也不会忽略主机密钥变化。
+
+```powershell
+. ./scripts/dev/env.ps1
+# 以下地址和路径为示例，需要改成已授权的真实设备与文件
+go run ./apps/cli sftp-read `
+  --address "100.100.10.20:22" --user "transfer" `
+  --key "C:\keys\hopsend_ed25519" --known-hosts "C:\keys\known_hosts" `
+  --remote "/shared/sample.bin" --offset 4096 --length 1048576 --timeout 30s
+```
+
+输出精确读取的范围 SHA-256、字节数与耗时。提供 `--sha256 <可信范围哈希>` 时才会输出 expected_hash_verified=true；否则只报告测量值，不声称内容来源已验证。
+
+命令只读取、哈希并丢弃范围字节，不创建下载文件、任务或续传记录。请求长度超出源文件、非法范围、身份/主机校验失败均返回非零；Ctrl+C 和超时会关闭该 worker 的 SSH 连接以解除阻塞。
+当前只支持文件型未加密私钥，不提供密码、私钥口令或 SSH Agent 交互；应使用专用且受文件权限保护的测试密钥。
+
+```powershell
+go test -v -count=1 -timeout=90s ./tests/integration
+```
+
+测试通过真实回环 TCP 建立加密 SSH 会话和 SFTP 子系统，读取临时文件。覆盖范围内容、CLI 可信哈希、未知/变化主机、错误用户私钥、截断源、整数溢出、读取中取消和不发送握手的超时服务。
+回环测试不证明局域网性能、Tailscale 穿透、DERP 路径或第二台设备已连通。两设备演练步骤见 [P0 验收运行手册](09-p0-device-runbook.md)。

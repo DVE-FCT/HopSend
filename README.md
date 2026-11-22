@@ -2,7 +2,7 @@
 
 跨设备文件传输助手，面向 Windows 和可信协作设备。
 
-**当前状态：P0.1 已实现 CLI `version`、`doctor` 和工具链/构建检查。桌面端、Agent 与文件传输仍在后续阶段。**
+**当前状态：已实现 CLI `version`、`doctor`、`sftp-read` 以及带主机校验的 SFTP 范围读取。桌面端、完整下载与恢复仍在后续阶段。**
 
 工程路径：`C:\Users\Lenovo\OneDrive\Desktop\HopSend`。
 
