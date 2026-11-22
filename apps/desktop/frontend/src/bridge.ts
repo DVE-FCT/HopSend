@@ -11,6 +11,7 @@ export interface Device {
   share_id: string;
 }
 export interface Task {
+  direction: string;
   id: string;
   task_id: string;
   name: string;
@@ -24,6 +25,12 @@ export interface Task {
   error?: string;
 }
 interface API {
+  StartUpload(
+    device: string,
+    share: string,
+    source: string,
+    target: string,
+  ): Promise<string>;
   Devices(): Promise<Device[]>;
   SaveDevice(d: Device): Promise<Device>;
   ImportDevice(): Promise<Device>;

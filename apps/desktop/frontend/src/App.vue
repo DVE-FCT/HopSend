@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
 import { backend, type Device, type Task } from "./bridge";
+import UploadPanel from "./components/UploadPanel.vue";
+const transferMode = ref("download");
 const page = ref("tasks"),
   devices = ref<Device[]>([]),
   tasks = ref<Task[]>([]),
@@ -30,6 +32,7 @@ const active = computed(() =>
     [
       "connecting",
       "downloading",
+      "uploading",
       "rechecking",
       "verifying",
       "waiting_network",
@@ -43,6 +46,7 @@ const words: Record<string, string> = {
   connecting: "正在连接",
   pending: "准备中",
   downloading: "正在下载",
+  uploading: "正在上传",
   rechecking: "核验已有分块",
   verifying: "全文件校验",
   publishing: "正在发布",
@@ -263,7 +267,34 @@ onUnmounted(() => {
             </section>
           </div>
         </div>
-        <section class="panel create">
+        <div class="section-title">
+          <div>
+            <button
+              :class="transferMode === 'download' ? 'primary' : 'secondary'"
+              @click="transferMode = 'download'"
+            >
+              从设备下载
+            </button>
+            <button
+              :class="transferMode === 'upload' ? 'primary' : 'secondary'"
+              @click="transferMode = 'upload'"
+            >
+              上传到设备
+            </button>
+          </div>
+          <span>上传以接收端校验和发布结果为准</span>
+        </div>
+        <UploadPanel
+          v-if="transferMode === 'upload'"
+          :devices="devices"
+          @started="
+            (id) => {
+              log('创建上传任务：' + id.slice(0, 12));
+              void perform(refresh);
+            }
+          "
+        />
+        <section v-else class="panel create">
           <div class="section-title">
             <h2>新建下载</h2>
             <span>01 / 选择设备与文件版本</span>
@@ -326,6 +357,9 @@ onUnmounted(() => {
           <div class="task-body">
             <div class="task-heading">
               <h3>{{ t.name }}</h3>
+              <span class="muted" style="font-size: 10px">{{
+                t.direction === "upload" ? "上传" : "下载"
+              }}</span>
               <span :class="['badge', t.state]">{{ word(t.state) }}</span
               ><strong>{{ ratio(t).toFixed(1) }}%</strong>
             </div>
@@ -347,6 +381,7 @@ onUnmounted(() => {
                 [
                   'connecting',
                   'downloading',
+                  'uploading',
                   'rechecking',
                   'verifying',
                   'waiting_network',
@@ -372,6 +407,7 @@ onUnmounted(() => {
                 [
                   'connecting',
                   'downloading',
+                  'uploading',
                   'rechecking',
                   'waiting_network',
                 ].includes(t.state)

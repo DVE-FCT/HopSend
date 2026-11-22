@@ -39,6 +39,7 @@ func (d Device) request() app.DownloadRequest {
 }
 
 type TaskView struct {
+	Direction   string `json:"direction"`
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	Destination string `json:"destination"`
@@ -243,6 +244,29 @@ func (a *App) StartDownload(deviceID, manifestID, destination string) (string, e
 	}
 	return id, err
 }
+
+func (a *App) StartUpload(deviceID, shareID, source, target string) (string, error) {
+	if err := a.Ready(); err != nil {
+		return "", err
+	}
+	d, err := a.findDevice(deviceID)
+	if err != nil {
+		return "", err
+	}
+	r := d.request()
+	r.Database, r.ShareID = a.database, shareID
+	r, err = app.PrepareUpload(a.ctx, r, source, target, 32<<20)
+	if err != nil {
+		return "", err
+	}
+	id, err := a.manager.Start(a.ctx, r)
+	if err == nil {
+		a.mu.Lock()
+		a.pending[id] = TaskView{ID: id, Direction: "upload", Name: filepath.Base(source), Destination: r.Destination, ManifestID: r.ManifestID}
+		a.mu.Unlock()
+	}
+	return id, err
+}
 func (a *App) PauseTask(id string) error            { return a.manager.Pause(a.ctx, id) }
 func (a *App) ResumeTask(id string) (string, error) { return a.manager.Resume(a.ctx, id) }
 func (a *App) CancelTask(id string) error           { return a.manager.Cancel(a.ctx, id) }
@@ -267,7 +291,13 @@ func (a *App) Tasks() ([]TaskView, error) {
 		} else if status.State != "completed" && status.State != "cancelled" && status.State != "paused" && status.State != "failed" {
 			status.State = "recoverable"
 		}
-		views = append(views, TaskView{ID: t.ID, Name: t.Manifest.Name, Destination: t.Destination, ManifestID: t.Manifest.ManifestID, TaskStatus: status})
+		var request app.DownloadRequest
+		_ = json.Unmarshal(t.Source, &request)
+		direction := request.Direction
+		if direction == "" {
+			direction = "download"
+		}
+		views = append(views, TaskView{ID: t.ID, Direction: direction, Name: t.Manifest.Name, Destination: t.Destination, ManifestID: t.Manifest.ManifestID, TaskStatus: status})
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()

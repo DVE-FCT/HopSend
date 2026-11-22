@@ -36,6 +36,16 @@ type readFixture struct {
 	once    sync.Once
 }
 
+func (f *readFixture) Filewrite(request *pkgsftp.Request) (io.WriterAt, error) {
+	path := strings.TrimPrefix(request.Filepath, "/")
+	rootPrefix := strings.TrimPrefix(filepath.ToSlash(f.root.Name()), "/") + "/"
+	path = strings.TrimPrefix(path, rootPrefix)
+	if !fs.ValidPath(path) || strings.ContainsAny(path, `\:`) {
+		return nil, fs.ErrPermission
+	}
+	return f.root.OpenFile(path, os.O_WRONLY, 0)
+}
+
 func (f *readFixture) Fileread(request *pkgsftp.Request) (io.ReaderAt, error) {
 	path := strings.TrimPrefix(request.Filepath, "/")
 	rootPrefix := strings.TrimPrefix(filepath.ToSlash(f.root.Name()), "/") + "/"
@@ -173,7 +183,7 @@ func startSFTPControlled(t *testing.T, delay time.Duration) (transport.Config, [
 							ok := request.Type == "subsystem" && ssh.Unmarshal(request.Payload, &subsystem) == nil && subsystem.Name == "sftp"
 							_ = request.Reply(ok, nil)
 							if ok {
-								server := pkgsftp.NewRequestServer(channel, pkgsftp.Handlers{FileGet: fixture})
+								server := pkgsftp.NewRequestServer(channel, pkgsftp.Handlers{FileGet: fixture, FilePut: fixture})
 								_ = server.Serve()
 								_ = server.Close()
 								return

@@ -50,10 +50,10 @@ func (s *Store) initialize() error {
 	if err := s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		return err
 	}
-	if version > 1 {
+	if version > 2 {
 		return errors.New("任务数据库版本高于当前程序支持的版本")
 	}
-	if version == 1 {
+	if version == 2 {
 		return nil
 	}
 	tx, err := s.db.Begin()
@@ -64,7 +64,9 @@ func (s *Store) initialize() error {
 	for _, statement := range []string{
 		`CREATE TABLE IF NOT EXISTS tasks(id TEXT PRIMARY KEY, manifest TEXT NOT NULL, remote_path TEXT NOT NULL, destination TEXT NOT NULL, staging TEXT NOT NULL, state TEXT NOT NULL, source TEXT NOT NULL, updated_at TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS chunks(task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE, chunk_index INTEGER NOT NULL, PRIMARY KEY(task_id,chunk_index))`,
-		`PRAGMA user_version=1`,
+		`CREATE TABLE IF NOT EXISTS uploads(id TEXT PRIMARY KEY,owner_id TEXT NOT NULL,request_id TEXT NOT NULL,share_id TEXT NOT NULL,target TEXT NOT NULL,manifest TEXT NOT NULL,staging TEXT NOT NULL,sftp_path TEXT NOT NULL,state TEXT NOT NULL,updated_at TEXT NOT NULL,UNIQUE(owner_id,request_id))`,
+		`CREATE TABLE IF NOT EXISTS upload_chunks(upload_id TEXT NOT NULL REFERENCES uploads(id) ON DELETE CASCADE,chunk_index INTEGER NOT NULL,PRIMARY KEY(upload_id,chunk_index))`,
+		`PRAGMA user_version=2`,
 	} {
 		if _, err = tx.Exec(statement); err != nil {
 			return err

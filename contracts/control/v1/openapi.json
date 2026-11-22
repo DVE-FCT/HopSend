@@ -286,6 +286,377 @@
           }
         }
       }
+    },
+    "/v1/uploads": {
+      "post": {
+        "summary": "检查权限和容量，创建或重取幂等上传会话",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "接收端会话状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadSession"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "格式、授权、状态、完整性、目标冲突或容量检查失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "格式、授权、状态、完整性、目标冲突或容量检查失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "格式、授权、状态、完整性、目标冲突或容量检查失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "格式、授权、状态、完整性、目标冲突或容量检查失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "格式、授权、状态、完整性、目标冲突或容量检查失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "格式、授权、状态、完整性、目标冲突或容量检查失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "接收端会话状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadSession"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUpload"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/uploads/{upload_id}": {
+      "get": {
+        "summary": "重新核验接收端已确认块并查询会话",
+        "parameters": [
+          {
+            "name": "upload_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "接收端会话状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadSession"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "格式、授权、状态、完整性、目标冲突或容量检查失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "格式、授权、状态、完整性、目标冲突或容量检查失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "格式、授权、状态、完整性、目标冲突或容量检查失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "格式、授权、状态、完整性、目标冲突或容量检查失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "格式、授权、状态、完整性、目标冲突或容量检查失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "格式、授权、状态、完整性、目标冲突或容量检查失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/uploads/{upload_id}/chunks/{index}/confirm": {
+      "post": {
+        "summary": "接收端核验块、同步文件并事务确认",
+        "parameters": [
+          {
+            "name": "upload_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          },
+          {
+            "name": "index",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "接收端会话状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadSession"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "格式、授权、状态、完整性、目标冲突或容量检查失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "格式、授权、状态、完整性、目标冲突或容量检查失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "格式、授权、状态、完整性、目标冲突或容量检查失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "格式、授权、状态、完整性、目标冲突或容量检查失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "格式、授权、状态、完整性、目标冲突或容量检查失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "格式、授权、状态、完整性、目标冲突或容量检查失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/uploads/{upload_id}/finalize": {
+      "post": {
+        "summary": "接收端全文件 SHA-256 校验并禁止覆盖发布",
+        "parameters": [
+          {
+            "name": "upload_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "接收端会话状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadSession"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "格式、授权、状态、完整性、目标冲突或容量检查失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "格式、授权、状态、完整性、目标冲突或容量检查失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "格式、授权、状态、完整性、目标冲突或容量检查失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "格式、授权、状态、完整性、目标冲突或容量检查失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "格式、授权、状态、完整性、目标冲突或容量检查失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "格式、授权、状态、完整性、目标冲突或容量检查失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -361,7 +732,11 @@
             "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$"
           },
           "access": {
-            "const": "read_only"
+            "enum": [
+              "read_only",
+              "write_only",
+              "read_write"
+            ]
           }
         }
       },
@@ -549,6 +924,89 @@
             "type": "string",
             "minLength": 1,
             "description": "Authenticated SFTP path to the published content snapshot; never use a mutable source path"
+          }
+        }
+      },
+      "UploadSession": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "request_id",
+          "share_id",
+          "target",
+          "manifest_id",
+          "state",
+          "sftp_path",
+          "confirmed_chunks"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{32}$"
+          },
+          "request_id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "share_id": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "manifest_id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "state": {
+            "enum": [
+              "uploading",
+              "verifying",
+              "publishing",
+              "completed"
+            ]
+          },
+          "sftp_path": {
+            "type": "string"
+          },
+          "confirmed_chunks": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      },
+      "CreateUpload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "request_id",
+          "share_id",
+          "target",
+          "manifest"
+        ],
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "share_id": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string",
+            "description": "当前为安全的 Windows 单级文件名"
+          },
+          "manifest": {
+            "$ref": "#/components/schemas/Manifest"
           }
         }
       }

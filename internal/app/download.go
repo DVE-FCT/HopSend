@@ -16,6 +16,9 @@ import (
 )
 
 type DownloadRequest struct {
+	Direction                        string
+	SnapshotDirectory                string
+	UploadTarget                     string
 	Agent                            nodeclient.Config
 	SSH                              transport.Config
 	ShareID, ManifestID, Destination string
@@ -25,6 +28,13 @@ type DownloadRequest struct {
 	Retries                          int
 	RetryDelay                       time.Duration
 	OnProgress                       func(engine.Progress) `json:"-"`
+}
+
+func Transfer(ctx context.Context, r DownloadRequest) (engine.DownloadResult, error) {
+	if r.Direction == "upload" {
+		return Upload(ctx, r)
+	}
+	return Download(ctx, r)
 }
 
 func DefaultDatabase() string {
@@ -59,7 +69,7 @@ func Resume(ctx context.Context, database, id string, progress func(engine.Progr
 	if request.ManifestID != task.Manifest.ManifestID || request.Destination != task.Destination {
 		return engine.DownloadResult{}, errors.New("任务源引用与持久化身份不一致")
 	}
-	return Download(ctx, request)
+	return Transfer(ctx, request)
 }
 
 type timedSource struct {

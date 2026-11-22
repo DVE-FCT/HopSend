@@ -26,6 +26,7 @@ type agentFixture struct {
 	address, ca, token, dir string
 	server                  *httptest.Server
 	config                  httpapi.Config
+	app                     *httpapi.Server
 }
 
 func startAgent(t *testing.T) agentFixture {
@@ -80,7 +81,7 @@ func startAgentConfigured(t *testing.T, configure func(*httpapi.Config)) agentFi
 	ts.TLS.Certificates = []tls.Certificate{pair}
 	ts.StartTLS()
 	t.Cleanup(func() { ts.Close(); _ = srv.Close() })
-	return agentFixture{address: ts.URL, ca: filepath.Join(dir, "ca.crt"), token: cfg.Credentials[0].TokenFile, dir: dir, server: ts, config: cfg}
+	return agentFixture{address: ts.URL, ca: filepath.Join(dir, "ca.crt"), token: cfg.Credentials[0].TokenFile, dir: dir, server: ts, config: cfg, app: srv}
 }
 
 func (f agentFixture) client(t *testing.T) *nodeclient.Client {

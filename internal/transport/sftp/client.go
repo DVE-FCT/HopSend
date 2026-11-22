@@ -154,3 +154,50 @@ func (c *Client) ReadRange(ctx context.Context, path string, offset, length int6
 	}
 	return n, nil
 }
+
+// WriteRange never creates or truncates a remote path. The receiving Agent must
+// first authorize and allocate the exact upload session path.
+func (c *Client) WriteRange(ctx context.Context, path string, offset, length int64, input io.Reader) (int64, error) {
+	if offset < 0 || length <= 0 || offset > math.MaxInt64-length {
+		return 0, errors.New("上传分块范围无效")
+	}
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	stop := context.AfterFunc(ctx, func() { _ = c.ssh.Close() })
+	defer stop()
+	f, err := c.sftp.OpenFile(path, os.O_WRONLY)
+	if err != nil {
+		return 0, contextError(ctx, fmt.Errorf("打开远端上传暂存: %w", err))
+	}
+	var written int64
+	buffer := make([]byte, 1<<20)
+	for written < length {
+		if err = ctx.Err(); err != nil {
+			break
+		}
+		var n int
+		n, err = io.ReadFull(input, buffer[:min(int64(len(buffer)), length-written)])
+		if err != nil {
+			break
+		}
+		var count int
+		count, err = f.WriteAt(buffer[:n], offset+written)
+		written += int64(count)
+		if err != nil {
+			break
+		}
+		if count != n {
+			err = io.ErrShortWrite
+			break
+		}
+	}
+	closeErr := f.Close()
+	if err == nil {
+		err = closeErr
+	}
+	if err == nil && written != length {
+		err = io.ErrShortWrite
+	}
+	return written, contextError(ctx, err)
+}
