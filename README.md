@@ -2,7 +2,7 @@
 
 跨设备文件传输助手，面向 Windows 和可信协作设备。
 
-**当前状态：P0.1～P0.3 已实现并进行本机验收：工具链/CLI、带主机校验的 SFTP 范围读取、受认证的 HTTPS Agent 与授权目录查询。真实两设备 Windows OpenSSH/Tailscale 联调待现场执行。桌面端、完整下载与恢复属于后续阶段。**
+**当前状态：P0.1～P0.3 已实现并完成本机验收。两台 Windows 上的 OpenSSH/SFTP 范围读取已通过 Tailscale 局域网直连验证；远端 HTTPS Agent 已通过 SSH 隧道验证。独立 HTTPS 端口及不同公网网络联调仍待执行。桌面端、完整下载与恢复属于后续阶段。**
 
 工程路径：`C:\Users\Lenovo\OneDrive\Desktop\HopSend`。
 
@@ -57,6 +57,7 @@ HopSend/
 6. [运行数据与配置分区](docs/06-runtime-layout.md)：数据库、日志、凭据和下载目录。
 7. [Git 工作流与中文提交规范](docs/07-git-workflow.md)：测试分支、PR、冲突解决和合并验证。
 8. [P0 当前使用方法](docs/08-p0-usage.md)与[两设备现场验收](docs/09-p0-device-runbook.md)。
+9. [两台 Windows 实测记录](docs/validation/P0.2-device.md)：包含真实联调发现的主机密钥算法选择修复及验证范围。
 
 ## 技术基线
 
