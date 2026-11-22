@@ -1,0 +1,6 @@
+#!/bin/sh
+IFS= read -r stage_subject < "$1"
+if ! printf '%s\n' "$stage_subject" | grep -Eq '^(功能|修复|重构|测试|文档|构建|维护)\((S0|P[0-4](\.[0-9]+)?)\): .+$'; then
+  printf '%s\n' '提交标题格式不符合规范：类型(阶段): 中文动作与结果' '示例：文档(S0): 建立工程基线与阶段验收规范' >&2
+  exit 1
+fi

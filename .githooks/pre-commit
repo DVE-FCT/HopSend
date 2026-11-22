@@ -1,0 +1,9 @@
+#!/bin/sh
+stage_branch=$(git symbolic-ref --quiet --short HEAD) || {
+  printf '%s\n' '提交被阻止：请先切换到本阶段的 test/ 测试分支。' >&2
+  exit 1
+}
+case "$stage_branch" in
+  test/*) exit 0 ;;
+  *) printf '%s\n' '提交被阻止：仅允许从 test/<阶段>-<主题> 分支提交，禁止直接在 main 提交。' >&2; exit 1 ;;
+esac

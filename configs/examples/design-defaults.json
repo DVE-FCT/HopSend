@@ -1,0 +1,10 @@
+{
+  "document_kind": "design_defaults_not_runtime_config",
+  "schema_version": 1,
+  "chunk_size_bytes": 33554432,
+  "max_active_chunks_per_node": 2,
+  "max_active_chunks_global": 4,
+  "ui_snapshot_interval_ms": 250,
+  "hash_algorithm": "sha256",
+  "status": "planned_requires_benchmark_validation"
+}
