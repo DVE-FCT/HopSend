@@ -22,6 +22,8 @@ type DownloadRequest struct {
 	Workers                          int
 	ReadTimeout                      time.Duration
 	Database                         string
+	Retries                          int
+	RetryDelay                       time.Duration
 	OnProgress                       func(engine.Progress) `json:"-"`
 }
 
@@ -46,6 +48,9 @@ func Resume(ctx context.Context, database, id string, progress func(engine.Progr
 	if err != nil {
 		return engine.DownloadResult{}, err
 	}
+	if task.State == "cancelled" {
+		return engine.DownloadResult{}, errors.New("任务已取消；如需重新下载，请显式运行 download")
+	}
 	var request DownloadRequest
 	if err = json.Unmarshal(task.Source, &request); err != nil {
 		return engine.DownloadResult{}, err
@@ -63,9 +68,29 @@ type timedSource struct {
 }
 
 func (s *timedSource) ReadRange(ctx context.Context, path string, offset, length int64, w io.Writer) (int64, error) {
-	ctx, cancel := context.WithTimeout(ctx, s.timeout)
-	defer cancel()
-	return s.Client.ReadRange(ctx, path, offset, length, w)
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	watchdog := time.AfterFunc(s.timeout, func() { cancel(context.DeadlineExceeded) })
+	defer watchdog.Stop()
+	n, err := s.Client.ReadRange(ctx, path, offset, length, &activityWriter{target: w, timeout: s.timeout, watchdog: watchdog})
+	if ctx.Err() != nil {
+		return n, context.Cause(ctx)
+	}
+	return n, err
+}
+
+type activityWriter struct {
+	target   io.Writer
+	timeout  time.Duration
+	watchdog *time.Timer
+}
+
+func (w *activityWriter) Write(p []byte) (int, error) {
+	n, err := w.target.Write(p)
+	if n > 0 {
+		w.watchdog.Reset(w.timeout)
+	}
+	return n, err
 }
 
 func Download(ctx context.Context, r DownloadRequest) (engine.DownloadResult, error) {
@@ -82,6 +107,13 @@ func Download(ctx context.Context, r DownloadRequest) (engine.DownloadResult, er
 		}
 		*path = absolute
 	}
+	if r.Retries < 0 || r.Retries > 100 || r.RetryDelay < 0 || r.RetryDelay > time.Minute {
+		return engine.DownloadResult{}, errors.New("重试次数必须为 0–100，初始退避必须为 0–1 分钟")
+	}
+	return runWithRetry(ctx, r, downloadAttempt)
+}
+
+func downloadAttempt(ctx context.Context, r DownloadRequest) (engine.DownloadResult, error) {
 	client, err := nodeclient.New(r.Agent)
 	if err != nil {
 		return engine.DownloadResult{}, err

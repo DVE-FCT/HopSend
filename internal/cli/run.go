@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"runtime"
 
 	"github.com/DVE-FCT/HopSend/internal/buildinfo"
@@ -20,10 +21,12 @@ func writeJSON(out io.Writer, value any) error {
 
 func Run(ctx context.Context, args []string, out, stderr io.Writer) int {
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" {
-		fmt.Fprintln(out, "跃传 HopSend\n用法：hopsend-cli version | doctor [--strict] | sftp-read [参数] | agent-init [参数] | agent-status [参数] | publish [参数] | download [参数] | tasks [--database 路径] | resume --task ID [--database 路径]\nsftp-read 只诊断范围；download 根据可信清单下载、校验并发布文件；resume 重核验并恢复 SQLite 中的任务。")
+		fmt.Fprintln(out, "跃传 HopSend\n用法：hopsend-cli version | doctor [--strict] | sftp-read [参数] | agent-init [参数] | agent-status [参数] | publish [参数] | download [参数] | tasks [--database 路径] | resume --task ID [--database 路径] | control --task ID [--database 路径]\nsftp-read 只诊断范围；download 根据可信清单下载、校验并发布文件；resume 重核验并恢复 SQLite 中的任务；control 在本进程内控制暂停、继续和取消。")
 		return 0
 	}
 	switch args[0] {
+	case "control":
+		return runControl(ctx, args[1:], os.Stdin, out, stderr)
 	case "tasks":
 		return runTasks(ctx, args[1:], out, stderr, false)
 	case "resume":

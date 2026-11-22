@@ -8,7 +8,7 @@
 | contracts/manifest/v1 | manifest.schema.json | 清单格式、块边界、内容 ID、路径约束 |
 | contracts/events/v1 | events.schema.json / README.md | UI 事件名、载荷、节流和快照版本 |
 
-P0.3 的四个 GET 接口已落地 OpenAPI 3.1 与共享 Go DTO，实际响应已按契约检查。清单、UI 事件和上传接口仍在规划中。Go/TS DTO 若生成，注明生成来源。
+当前 HTTPS GET 接口与 manifest v1 已落地 OpenAPI、JSON Schema 及共享 Go 类型；UI 事件和上传契约按 P2 推进。Go/TS DTO 若生成，注明生成来源。
 
 ## 2. 控制接口草案
 
@@ -16,20 +16,20 @@ P0.3 的四个 GET 接口已落地 OpenAPI 3.1 与共享 Go DTO，实际响应�
 GET  /v1/health
 GET  /v1/capabilities
 GET  /v1/shares
-GET  /v1/manifests/{manifest_id}
+GET  /v1/shares/{share_id}/manifests/{manifest_id}
 GET  /v1/contents/{content_id}/availability
 POST /v1/uploads
 GET  /v1/uploads/{upload_id}
 POST /v1/uploads/{upload_id}/finalize
 ```
 
-前述路径是规划；不代表已经有服务监听。以 share_id/content_id/upload_id 访问受控对象，不接受任意绝对系统路径。
+前述路径混合当前接口与后续草案；以 contracts/control/v1/openapi.json 为实际接口依据。以 share_id/content_id/upload_id 访问受控对象，不接受任意绝对系统路径。
 
-P0.3 当前实际实现 GET /v1/health、/v1/capabilities、/v1/shares，以及 /v1/shares/{share_id}/entries?path=相对目录；其余清单与上传路径尚未实现。
+实际实现 GET /v1/health、/v1/capabilities、/v1/shares、/v1/shares/{share_id}/entries?path=相对目录，以及 P1.1 的 /v1/shares/{share_id}/manifests/{manifest_id}；上传接口留待 P2.2。
 
 ## 3. Manifest 内容
 
-schema_version、manifest_id、content_id、relative_path、size_bytes、chunk_size_bytes、chunks（index/offset/length/sha256）、file_sha256、source_version。
+当前 v1 包含 schema_version、manifest_id、content_id、share_id、name、size_bytes、chunk_size_bytes、chunks（index/offset/length/sha256）。name 是 Windows 安全单级文件名；content_id 同时承担完整文件 SHA-256 和不可变内容版本身份，不能把未实现的目录字段当作现有契约。
 
 文件内容 ID 根据字节哈希生成；清单 ID 根据规范化清单生成，排除 ID 自身和签名。不同块规则的清单即使内容相同，也不能直接混用分块状态。
 版本发布后保持只读；内容改变生成新版本。预期哈希从已认证 Agent 取得，未来公开分享再加入签名与信任管理。
@@ -49,6 +49,9 @@ schema_version、manifest_id、content_id、relative_path、size_bytes、chunk_s
 
 Agent 与桌面进程使用各自的数据库文件。共用迁移基础设施时，按角色明确 schema 范围，防止服务和 UI 进程同时争用一个业务库。
 开启适当 WAL/事务策略，使用受控写入路径聚合提交。WAL 不替代文件数据 Sync。
+
+以上实体表是整体规划。P1.2 当前实际 schema 为 tasks（完整 manifest、源配置引用、路径、状态和更新时间）与 chunks（任务和已确认块索引）；块偏移、长度及哈希来自任务保存的原 manifest，避免出现两份不一致元数据。
+其余节点、目录、上传和设置实体仍按阶段实施，详见 [ADR 0003](adr/0003-durable-download-journal.md)。
 
 ## 5. UI 事件与状态
 

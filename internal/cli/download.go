@@ -55,9 +55,11 @@ func runDownload(ctx context.Context, args []string, out, stderr io.Writer) int 
 	known := f.String("known-hosts", "", "已核对的主机记录")
 	destination := f.String("output", "", "目标文件路径；现有文件不会覆盖")
 	workers := f.Int("workers", 2, "每节点并发块数，1–8")
-	timeout := f.Duration("read-timeout", 2*time.Minute, "每块读取超时")
+	timeout := f.Duration("read-timeout", 2*time.Minute, "分块持续无数据进展的超时")
 	quiet := f.Bool("quiet", false, "关闭 stderr 分块进度")
 	database := f.String("database", app.DefaultDatabase(), "SQLite 任务数据库路径")
+	retries := f.Int("retries", 6, "临时网络错误的重试次数，0–100")
+	retryDelay := f.Duration("retry-delay", time.Second, "初始网络退避，最多一分钟")
 	if err := f.Parse(args); err != nil {
 		return 2
 	}
@@ -69,7 +71,7 @@ func runDownload(ctx context.Context, args []string, out, stderr io.Writer) int 
 		encoder := json.NewEncoder(stderr)
 		progress = func(p engine.Progress) { _ = encoder.Encode(p) }
 	}
-	r, err := app.Download(ctx, app.DownloadRequest{Agent: nodeclient.Config{URL: *url, CACertificate: *ca, TokenFile: *token}, SSH: transport.Config{Address: *address, User: *user, PrivateKeyPath: *key, KnownHostsPath: *known}, ShareID: *share, ManifestID: *id, Destination: *destination, Workers: *workers, ReadTimeout: *timeout, OnProgress: progress, Database: *database})
+	r, err := app.Download(ctx, app.DownloadRequest{Agent: nodeclient.Config{URL: *url, CACertificate: *ca, TokenFile: *token}, SSH: transport.Config{Address: *address, User: *user, PrivateKeyPath: *key, KnownHostsPath: *known}, ShareID: *share, ManifestID: *id, Destination: *destination, Workers: *workers, ReadTimeout: *timeout, OnProgress: progress, Database: *database, Retries: *retries, RetryDelay: *retryDelay})
 	if err != nil {
 		fmt.Fprintln(stderr, "下载未完成:", err)
 		return 1

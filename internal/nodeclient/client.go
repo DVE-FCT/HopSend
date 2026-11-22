@@ -31,6 +31,10 @@ type Config struct {
 	Timeout                       time.Duration
 }
 
+type HTTPError struct{ StatusCode int }
+
+func (e *HTTPError) Error() string { return fmt.Sprintf("Agent 返回 HTTP %d", e.StatusCode) }
+
 func New(cfg Config) (*Client, error) {
 	u, err := url.Parse(cfg.URL)
 	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
@@ -74,7 +78,7 @@ func (c *Client) get(ctx context.Context, path string, target any) error {
 	}
 	defer response.Body.Close()
 	if response.StatusCode != 200 {
-		return fmt.Errorf("Agent 返回 HTTP %d", response.StatusCode)
+		return &HTTPError{StatusCode: response.StatusCode}
 	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, manifest.MaxJSONBytes+1))
 	if err != nil {

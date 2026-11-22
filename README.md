@@ -2,7 +2,7 @@
 
 跨设备文件传输助手，面向 Windows 和可信协作设备。
 
-**当前状态：P1.1～P1.2 已实现可信清单、HTTPS 查询、SFTP 分块下载、SQLite 持久化、退出后重核验续传和 SHA-256 校验。两台 Windows 已完成独立 HTTPS、5 GiB＋17 字节下载、强制结束进程与坏块修复实测。暂停、自动网络恢复和桌面端按 P1.3～P2 继续推进。**
+**当前状态：P1.1～P1.3 已实现可信清单、SFTP 分块下载、SQLite 续传、暂停/继续/取消、自动网络重试和 SHA-256 校验。两台 Windows 完成独立 HTTPS、5 GiB＋17 字节下载、退出与坏块恢复，并在手机热点与 DERP 中继下完成续传及全文件哈希复验。桌面、上传与目录按 P2 继续推进。**
 
 工程路径：`C:\Users\Lenovo\OneDrive\Desktop\HopSend`。
 
@@ -59,6 +59,7 @@ HopSend/
 8. [P0 当前使用方法](docs/08-p0-usage.md)与[两设备现场验收](docs/09-p0-device-runbook.md)。
 9. [两台 Windows 实测记录](docs/validation/P0.2-device.md)：包含真实联调发现的主机密钥算法选择修复及验证范围。
 10. [P1 可靠下载使用方法](docs/10-reliable-download.md)与[P1～P2 完整验收矩阵](docs/11-p1-p2-acceptance.md)。
+11. [任务控制与网络恢复](docs/12-task-recovery-controls.md)：暂停、继续、取消、错误分类与有界重试。
 
 ## 技术基线
 
