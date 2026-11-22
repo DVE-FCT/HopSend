@@ -1,0 +1,398 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "HopSend Agent 控制接口",
+    "version": "0.1.0",
+    "description": "P0.3 仅提供 HTTPS 健康、能力和只读目录。所有接口使用独立设备凭据；文件字节由外部 SFTP 提供，尚未实现上传与 manifest 接口。"
+  },
+  "servers": [
+    {
+      "url": "https://localhost:9443"
+    }
+  ],
+  "security": [
+    {
+      "deviceToken": []
+    }
+  ],
+  "paths": {
+    "/v1/health": {
+      "get": {
+        "operationId": "health",
+        "summary": "受认证的健康与版本信息",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "凭据缺失或无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "结构化错误，不含绝对路径或凭据",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/capabilities": {
+      "get": {
+        "operationId": "capabilities",
+        "summary": "仅声明当前已实现的控制能力",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Capabilities"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "凭据缺失或无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "结构化错误，不含绝对路径或凭据",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/shares": {
+      "get": {
+        "operationId": "shares",
+        "summary": "列出当前凭据获准访问的共享 ID，不返回系统路径",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "凭据缺失或无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "结构化错误，不含绝对路径或凭据",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/shares/{share_id}/entries": {
+      "get": {
+        "operationId": "listEntries",
+        "summary": "只读目录信息，拒绝越界和目录链接",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntryList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "凭据缺失或无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "结构化错误，不含绝对路径或凭据",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "路径格式无效或不是目录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "目录不可访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "共享未知或未授权",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "超过单次 1000 项目录上限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "share_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": false,
+            "description": "共享内相对目录，默认 .；不接受绝对路径、..、反斜线、冒号及目录链接",
+            "schema": {
+              "type": "string",
+              "default": "."
+            }
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "deviceToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "32 random bytes encoded as 64 hex characters"
+      }
+    },
+    "schemas": {
+      "Health": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "service",
+          "version",
+          "api_version"
+        ],
+        "properties": {
+          "status": {
+            "const": "ok"
+          },
+          "service": {
+            "const": "hopsend-agent"
+          },
+          "version": {
+            "type": "string"
+          },
+          "api_version": {
+            "const": "v1"
+          }
+        }
+      },
+      "Capabilities": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "api_version",
+          "operations",
+          "data_transport",
+          "upload_supported"
+        ],
+        "properties": {
+          "api_version": {
+            "const": "v1"
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "data_transport": {
+            "const": "external_sftp"
+          },
+          "upload_supported": {
+            "const": false
+          }
+        }
+      },
+      "Share": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "access"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$"
+          },
+          "access": {
+            "const": "read_only"
+          }
+        }
+      },
+      "ShareList": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "shares"
+        ],
+        "properties": {
+          "shares": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Share"
+            }
+          }
+        }
+      },
+      "Entry": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "directory",
+          "size_bytes"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "directory": {
+            "type": "boolean"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "EntryList": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "share_id",
+          "path",
+          "entries"
+        ],
+        "properties": {
+          "share_id": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "entries": {
+            "type": "array",
+            "maxItems": 1000,
+            "items": {
+              "$ref": "#/components/schemas/Entry"
+            }
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "code",
+              "message"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

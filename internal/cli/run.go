@@ -20,10 +20,14 @@ func writeJSON(out io.Writer, value any) error {
 
 func Run(ctx context.Context, args []string, out, stderr io.Writer) int {
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" {
-		fmt.Fprintln(out, "跃传 HopSend\n用法：hopsend-cli version | doctor [--strict] | sftp-read [参数]\nsftp-read 只校验范围读取，不创建下载文件。")
+		fmt.Fprintln(out, "跃传 HopSend\n用法：hopsend-cli version | doctor [--strict] | sftp-read [参数] | agent-init [参数] | agent-status [参数]\nsftp-read 只校验范围读取，不创建下载文件。")
 		return 0
 	}
 	switch args[0] {
+	case "agent-init":
+		return runAgentInit(args[1:], out, stderr)
+	case "agent-status":
+		return runAgentStatus(ctx, args[1:], out, stderr)
 	case "sftp-read":
 		return runSFTP(ctx, args[1:], out, stderr)
 	case "version":

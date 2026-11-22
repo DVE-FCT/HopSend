@@ -1,0 +1,11 @@
+{
+  "listen": "127.0.0.1:9443",
+  "certificate_file": "server.crt",
+  "key_file": "server.key",
+  "credentials": [
+    {"id": "device-a", "token_file": "device-a.token", "share_ids": ["files"]}
+  ],
+  "shares": [
+    {"id": "files", "path": "./explicitly-authorized-directory"}
+  ]
+}
