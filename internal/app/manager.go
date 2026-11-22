@@ -151,8 +151,12 @@ func (m *Manager) Wait(ctx context.Context, id string) (engine.DownloadResult, e
 func (m *Manager) stop(ctx context.Context, id string, cause error) error {
 	m.mu.Lock()
 	e := m.active[id]
+	finished := m.finished[id]
 	m.mu.Unlock()
 	if e == nil {
+		if finished != nil {
+			return nil
+		}
 		return errors.New("任务未在本进程运行；请从任务列表继续或检查其他进程")
 	}
 	e.cancel(cause)

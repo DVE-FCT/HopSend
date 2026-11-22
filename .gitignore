@@ -23,6 +23,8 @@ go.work.sum
 apps/desktop/build/bin/
 apps/desktop/frontend/node_modules/
 apps/desktop/frontend/dist/
+apps/desktop/frontend/package.json.md5
+apps/desktop/*.syso
 apps/desktop/frontend/wailsjs/
 apps/desktop/frontend/src/generated/
 **/.vite/

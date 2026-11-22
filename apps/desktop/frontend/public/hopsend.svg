@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" fill="none">
+  <title>跃传 HopSend 应用图标</title>
+  <desc>深海蓝圆角方形内，两条方向相反的传输箭头连接两个节点。</desc>
+  <defs>
+    <linearGradient id="tile" x1="28" y1="12" x2="228" y2="248" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#173E58"/>
+      <stop offset="1" stop-color="#0C2338"/>
+    </linearGradient>
+    <linearGradient id="return" x1="68" y1="162" x2="194" y2="162" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#39DCC7"/>
+      <stop offset="1" stop-color="#71E5EC"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="58" fill="url(#tile)"/>
+  <path d="M68 94H178M154 70L178 94L154 118" stroke="#F3FAFF" stroke-width="17" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="68" cy="94" r="12" fill="#47DFD2"/>
+  <path d="M188 162H78M102 138L78 162L102 186" stroke="url(#return)" stroke-width="17" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="188" cy="162" r="12" fill="#F3FAFF"/>
+</svg>
