@@ -1,11 +1,20 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import {
+  computed,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  reactive,
+  ref,
+  watch,
+} from "vue";
 import {
   backend,
   type Device,
   type Task,
   type TaskEvent,
   type PreparationReport,
+  type DeviceObservation,
 } from "./bridge";
 import UploadPanel from "./components/UploadPanel.vue";
 import DiagnosticPanel from "./components/DiagnosticPanel.vue";
@@ -29,6 +38,31 @@ const taskFilter = ref("all");
 const history = ref<TaskEvent[]>([]);
 const preparation = ref<PreparationReport>();
 const preparing = ref("");
+const operation = ref("");
+const version = ref("");
+const refreshedAt = ref("");
+const refreshError = ref(false);
+const clock = ref(Date.now());
+const editor = ref<HTMLDialogElement>();
+let previousOverflow = "";
+const highlightedTask = ref("");
+let highlightTimer: ReturnType<typeof setTimeout> | undefined;
+const observations = reactive<
+  Record<
+    string,
+    { loading: boolean; result?: DeviceObservation; error?: string }
+  >
+>({});
+const observing = computed(() =>
+  Object.values(observations).some((o) => o.loading),
+);
+const attentionStates = [
+  "failed",
+  "paused",
+  "recoverable",
+  "interrupted",
+  "waiting_network",
+];
 const titles: Record<string, string> = {
   tasks: "传输任务",
   devices: "设备与信任",
@@ -67,6 +101,14 @@ const empty = (): Device => ({
 });
 const form = reactive(empty());
 const entries = ref<{ time: string; text: string }[]>([]);
+const attention = computed(
+  () => tasks.value.filter((t) => attentionStates.includes(t.state)).length,
+);
+const breadcrumb = computed(() =>
+  page.value === "tasks"
+    ? `任务 / 活动 ${active.value.length} · 待处理 ${attention.value}`
+    : `工作空间 / ${titles[page.value]}`,
+);
 const active = computed(() =>
   tasks.value.filter((t) =>
     [
@@ -87,14 +129,7 @@ const visibleTasks = computed(() =>
       (taskFilter.value === "active" &&
         active.value.some((a) => a.id === t.id)) ||
       (taskFilter.value === "completed" && t.state === "completed") ||
-      (taskFilter.value === "attention" &&
-        [
-          "failed",
-          "paused",
-          "recoverable",
-          "interrupted",
-          "waiting_network",
-        ].includes(t.state)),
+      (taskFilter.value === "attention" && attentionStates.includes(t.state)),
   ),
 );
 const totalSpeed = computed(() =>
@@ -109,12 +144,92 @@ const eta = (n: number) =>
         ? `${Math.ceil(n / 60)} 分钟`
         : `${(n / 3600).toFixed(1)} 小时`;
 watch(page, (value) => {
+  if (value === "devices") void observeDevices();
   if (value === "logs")
     void backend()
       .Activity()
       .then((v) => (history.value = v))
       .catch((e) => (error.value = String(e)));
 });
+watch(showEditor, async (open) => {
+  await nextTick();
+  if (open) {
+    previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    editor.value?.showModal();
+  } else {
+    editor.value?.close();
+    document.body.style.overflow = previousOverflow;
+  }
+});
+async function observeOne(id: string) {
+  if (observations[id]?.loading) return;
+  observations[id] = { ...observations[id], loading: true, error: undefined };
+  const pending = observations[id];
+  try {
+    const result = await backend().ObserveDevice(id);
+    if (observations[id] === pending)
+      observations[id] = { loading: false, result };
+  } catch (e) {
+    if (observations[id] === pending)
+      observations[id] = { loading: false, error: String(e) };
+  }
+}
+async function observeDevices(force = false) {
+  const queue = devices.value.filter((d) => {
+    const o = observations[d.id];
+    return (
+      !o?.loading &&
+      (force ||
+        !o?.result ||
+        Date.now() - Date.parse(o.result.observed_at) > 60_000)
+    );
+  });
+  await Promise.all(
+    [0, 1].map(async () => {
+      for (let d = queue.shift(); d; d = queue.shift()) await observeOne(d.id);
+    }),
+  );
+}
+function observationLabel(id: string) {
+  const o = observations[id];
+  if (o?.loading) return "正在检查 HTTPS";
+  if (!o?.result) return o?.error ? "检查失败" : "尚未检查";
+  const stale = clock.value - Date.parse(o.result.observed_at) > 60_000;
+  return o.result.reachable
+    ? stale
+      ? "上次 HTTPS 可达"
+      : "HTTPS 可达"
+    : stale
+      ? "上次未响应"
+      : "HTTPS 未响应";
+}
+function isRecentReachable(id: string) {
+  const r = observations[id]?.result;
+  return r?.reachable && clock.value - Date.parse(r.observed_at) <= 60_000;
+}
+function taskName(id: string) {
+  return (
+    tasks.value.find((t) => t.id === id)?.name || `任务 ${id.slice(0, 12)}`
+  );
+}
+async function jumpToTask(id: string) {
+  if (!tasks.value.some((t) => t.id === id)) return;
+  page.value = "tasks";
+  taskFilter.value = "all";
+  highlightedTask.value = id;
+  await nextTick();
+  const target = document.getElementById(`task-${id}`);
+  target?.scrollIntoView({
+    behavior: matchMedia("(prefers-reduced-motion: reduce)").matches
+      ? "instant"
+      : "smooth",
+    block: "center",
+  });
+  target?.focus({ preventScroll: true });
+  if (highlightTimer) clearTimeout(highlightTimer);
+  highlightTimer = setTimeout(() => (highlightedTask.value = ""), 3500);
+}
 const completed = computed(
   () => tasks.value.filter((t) => t.state === "completed").length,
 );
@@ -151,27 +266,43 @@ function log(text: string) {
   entries.value.unshift({ time: new Date().toLocaleTimeString("zh-CN"), text });
   entries.value = entries.value.slice(0, 50);
 }
-async function perform(action: () => Promise<void>) {
+async function perform(action: () => Promise<void>, name = "action") {
+  if (busy.value) return;
   error.value = "";
   busy.value = true;
+  operation.value = name;
   try {
     await action();
   } catch (e) {
     error.value = String(e);
     log(error.value);
+    if (showEditor.value) {
+      await nextTick();
+      editor.value?.querySelector<HTMLElement>('[role="alert"]')?.focus();
+    }
   } finally {
     busy.value = false;
+    operation.value = "";
   }
 }
 async function refresh() {
-  tasks.value = await backend().Tasks();
+  try {
+    tasks.value = await backend().Tasks();
+    refreshedAt.value = new Date().toLocaleTimeString("zh-CN");
+    refreshError.value = false;
+  } catch (e) {
+    refreshError.value = true;
+    throw e;
+  }
 }
 async function load() {
   devices.value = await backend().Devices();
   if (!selected.value) selected.value = devices.value[0]?.id || "";
   await refresh();
+  void observeDevices();
 }
 function edit(d?: Device) {
+  error.value = "";
   Object.assign(form, empty(), d || {});
   showEditor.value = true;
   page.value = "devices";
@@ -185,11 +316,12 @@ async function importConfig() {
       page.value = "devices";
       notice.value = "配置已读入，请核对后保存。";
     }
-  });
+  }, "import");
 }
 async function save() {
   await perform(async () => {
     const d = await backend().SaveDevice({ ...form });
+    delete observations[d.id];
     selected.value = d.id;
     showEditor.value = false;
     await load();
@@ -204,11 +336,12 @@ async function save() {
         preparation.value = await backend().PrepareDevice(d.id);
         notice.value =
           "设备已就绪：环境、程序、HTTPS 认证与实际 SFTP 字节测试通过。";
+        void observeOne(d.id);
       } finally {
         preparing.value = "";
       }
     }
-  });
+  }, "save");
 }
 const trustFields = [
   ["ca_file", "CA 证书公钥"],
@@ -231,6 +364,7 @@ async function check(id: string) {
       try {
         preparation.value = await backend().PrepareDevice(id);
         notice.value = "设备已就绪，传输前还会自动预检。";
+        void observeOne(id);
       } finally {
         preparing.value = "";
       }
@@ -239,7 +373,8 @@ async function check(id: string) {
     const r = await backend().CheckDevice(id);
     notice.value = r.message;
     log(`${r.message} · ${r.observed_at}`);
-  });
+    void observeOne(id);
+  }, `check:${id}`);
 }
 async function pickDestination() {
   await perform(async () => {
@@ -259,7 +394,7 @@ async function start() {
     );
     log(`创建下载任务：${id.slice(0, 12)}`);
     await refresh();
-  });
+  }, "download");
 }
 async function control(t: Task, action: "pause" | "resume" | "cancel") {
   await perform(async () => {
@@ -275,8 +410,13 @@ async function control(t: Task, action: "pause" | "resume" | "cancel") {
 let timer: ReturnType<typeof setInterval> | undefined;
 onMounted(() => {
   void perform(load);
+  void backend()
+    .ApplicationInfo()
+    .then((info) => (version.value = info.version))
+    .catch((e) => log(`读取版本失败：${e}`));
   let ticks = 0;
   timer = setInterval(() => {
+    clock.value = Date.now();
     if (page.value === "logs" && ++ticks % 4 === 0)
       void backend()
         .Activity()
@@ -289,6 +429,8 @@ onMounted(() => {
 });
 onUnmounted(() => {
   if (timer) clearInterval(timer);
+  if (highlightTimer) clearTimeout(highlightTimer);
+  if (showEditor.value) document.body.style.overflow = previousOverflow;
 });
 </script>
 
@@ -317,14 +459,14 @@ onUnmounted(() => {
       </button>
       <div class="side-bottom">
         <span class="dot"></span>任务保存在本机
-        <p>可信设备之间的可靠传输</p>
-        <small>跃传 HopSend · 可信设备传输</small>
+        <p>跃传 HopSend</p>
+        <small>{{ version || "正在读取版本…" }}</small>
       </div>
     </aside>
     <main>
       <header class="page-header">
         <div>
-          <div class="eyebrow">HOPSEND / 工作空间</div>
+          <div class="eyebrow">{{ breadcrumb }}</div>
           <h1>{{ titles[page] }}</h1>
           <p>{{ descriptions[page] }}</p>
         </div>
@@ -337,12 +479,33 @@ onUnmounted(() => {
           >
             <Icon :name="theme === 'light' ? 'moon' : 'sun'" /></button
           ><button class="secondary" @click="importConfig" :disabled="busy">
-            <Icon name="plus" />导入配对配置
+            <span
+              v-if="operation === 'import'"
+              class="spinner"
+              aria-hidden="true"
+            ></span>
+            <Icon v-else name="plus" />{{
+              operation === "import" ? "正在导入…" : "导入配对配置"
+            }}
           </button>
         </div>
       </header>
-      <div v-if="error" class="message error" role="alert">{{ error }}</div>
-      <div v-else-if="notice" class="message" role="status">{{ notice }}</div>
+      <div v-if="error" class="message error" role="alert">
+        <span>{{ error }}</span
+        ><button
+          class="text-button"
+          aria-label="关闭错误提示"
+          @click="error = ''"
+        >
+          <Icon name="close" />
+        </button>
+      </div>
+      <div v-if="notice" class="message" role="status">
+        <span>{{ notice }}</span
+        ><button class="text-button" aria-label="关闭通知" @click="notice = ''">
+          <Icon name="close" />
+        </button>
+      </div>
       <template v-if="page === 'tasks'">
         <div class="stats">
           <div>
@@ -359,12 +522,14 @@ onUnmounted(() => {
               >{{ size(totalSpeed) }}<span>/ 秒</span></strong
             >
           </div>
-          <div class="reliable">
-            <Icon name="shield" />
-            <section>
-              每一块，完整抵达<small>完整性校验 · 中断可继续</small>
-            </section>
-          </div>
+          <button
+            class="attention-stat"
+            @click="taskFilter = 'attention'"
+            :aria-label="`查看 ${attention} 项待处理任务`"
+          >
+            <label>待处理</label><strong>{{ attention }} <span>项</span></strong
+            ><small>查看需要关注的任务 <Icon name="arrow" /></small>
+          </button>
         </div>
         <div class="section-title">
           <div class="transfer-switch">
@@ -400,7 +565,11 @@ onUnmounted(() => {
           </div>
           <div class="create-grid">
             <label
-              >源设备<select v-model="selected" aria-label="源设备">
+              >源设备<select
+                v-model="selected"
+                aria-label="源设备"
+                :disabled="busy"
+              >
                 <option disabled value="">请先添加设备</option>
                 <option v-for="d in devices" :value="d.id" :key="d.id">
                   {{ d.name }}
@@ -409,6 +578,7 @@ onUnmounted(() => {
             ><label class="manifest"
               >清单 ID<input
                 v-model="manifest"
+                :disabled="busy"
                 placeholder="粘贴源设备发布的 64 位清单 ID"
                 aria-label="清单 ID"
                 spellcheck="false"
@@ -419,6 +589,7 @@ onUnmounted(() => {
             <div class="path-input">
               <input
                 v-model="destination"
+                :disabled="busy"
                 placeholder="选择本机保存路径，已有文件不会被覆盖"
                 aria-label="保存位置"
               /><button @click="pickDestination" :disabled="busy">
@@ -433,7 +604,13 @@ onUnmounted(() => {
               @click="start"
               :disabled="busy || !selected || !manifest || !destination"
             >
-              开始下载 <Icon name="arrow" />
+              <span
+                v-if="operation === 'download'"
+                class="spinner"
+                aria-hidden="true"
+              ></span
+              >{{ operation === "download" ? "正在准备下载…" : "开始下载" }}
+              <Icon v-if="operation !== 'download'" name="arrow" />
             </button>
           </div>
         </section>
@@ -441,12 +618,16 @@ onUnmounted(() => {
           <h2>
             全部任务 <span>{{ tasks.length }}</span>
           </h2>
-          <button class="text-button" @click="perform(refresh)">
+          <button
+            class="text-button"
+            @click="perform(refresh)"
+            :disabled="busy"
+          >
             刷新状态
           </button>
         </div>
         <div v-if="!tasks.length" class="empty panel">
-          <div>⇩</div>
+          <Icon name="download" />
           <h3>还没有传输任务</h3>
           <p>添加一台可信设备，填写清单 ID，开始第一次下载。</p>
           <button class="secondary" @click="edit()">添加设备</button>
@@ -471,14 +652,26 @@ onUnmounted(() => {
           <h3>当前分类没有任务</h3>
           <p>切换分类可查看其他任务。</p>
         </div>
-        <article v-for="t in visibleTasks" :key="t.id" class="task panel">
+        <article
+          v-for="t in visibleTasks"
+          :key="t.id"
+          :id="`task-${t.id}`"
+          :class="[
+            'task',
+            'panel',
+            t.state,
+            { highlighted: highlightedTask === t.id },
+          ]"
+          tabindex="-1"
+          :aria-label="t.name"
+        >
           <div class="file-icon">
             <Icon :name="t.direction === 'upload' ? 'upload' : 'download'" />
           </div>
           <div class="task-body">
             <div class="task-heading">
-              <h3>{{ t.name }}</h3>
-              <span class="muted" style="font-size: 10px">{{
+              <h3 :title="t.name">{{ t.name }}</h3>
+              <span class="muted task-direction">{{
                 t.direction === "upload" ? "上传" : "下载"
               }}</span>
               <span :class="['badge', t.state]">{{ word(t.state) }}</span
@@ -520,6 +713,14 @@ onUnmounted(() => {
             <p v-if="t.error" class="task-error">{{ t.error }}</p>
           </div>
           <div class="task-actions">
+            <button
+              v-if="t.state === 'completed' && t.direction !== 'upload'"
+              class="secondary"
+              @click="perform(() => backend().RevealTask(t.id))"
+              :disabled="busy"
+            >
+              <Icon name="folder" />打开文件夹
+            </button>
             <button
               v-if="
                 [
@@ -570,7 +771,18 @@ onUnmounted(() => {
       <template v-if="page === 'devices'">
         <div class="section-title">
           <h2>可信源设备</h2>
-          <button class="primary" @click="edit()">＋ 添加设备</button>
+          <div class="header-actions">
+            <button
+              class="secondary"
+              @click="observeDevices(true)"
+              :disabled="observing"
+            >
+              <span v-if="observing" class="spinner" aria-hidden="true"></span
+              >{{ observing ? "正在检查…" : "刷新连接状态" }}</button
+            ><button class="primary" @click="edit()" :disabled="busy">
+              ＋ 添加设备
+            </button>
+          </div>
         </div>
         <section v-if="preparing" class="panel preparation">
           <span class="spinner"></span>
@@ -600,10 +812,41 @@ onUnmounted(() => {
         </section>
         <div class="device-grid">
           <article v-for="d in devices" :key="d.id" class="panel device">
-            <div class="device-icon"><Icon name="device" /></div>
+            <div class="device-top">
+              <div class="device-icon"><Icon name="device" /></div>
+              <span
+                :class="[
+                  'device-status',
+                  { reachable: isRecentReachable(d.id) },
+                ]"
+                :title="
+                  observations[d.id]?.result?.detail ||
+                  observations[d.id]?.error
+                "
+                ><span
+                  v-if="observations[d.id]?.loading"
+                  class="spinner"
+                  aria-hidden="true"
+                ></span
+                ><i v-else></i>{{ observationLabel(d.id) }}</span
+              >
+            </div>
             <h3>{{ d.name }}</h3>
-            <p>{{ d.agent_url }}</p>
-            <p>SSH {{ d.ssh_address }} · {{ d.ssh_user }}</p>
+            <p class="endpoint">
+              <b>HTTPS</b><span>{{ d.agent_url }}</span>
+            </p>
+            <p class="endpoint">
+              <b>SSH</b><span>{{ d.ssh_address }} · {{ d.ssh_user }}</span>
+            </p>
+            <p class="observation-time">
+              {{
+                observations[d.id]?.result
+                  ? `观察于 ${new Date(observations[d.id]!.result!.observed_at).toLocaleTimeString("zh-CN")}`
+                  : "只读健康检查，不启动远端程序"
+              }}<span v-if="observations[d.id]?.result?.agent_version">
+                · Agent {{ observations[d.id]!.result!.agent_version }}</span
+              >
+            </p>
             <small>{{
               d.manage_agent
                 ? "已启用自动准备 · 连接时检查并恢复 Agent"
@@ -611,10 +854,17 @@ onUnmounted(() => {
             }}</small>
             <footer>
               <button class="secondary" @click="check(d.id)" :disabled="busy">
+                <span
+                  v-if="operation === `check:${d.id}`"
+                  class="spinner"
+                  aria-hidden="true"
+                ></span>
                 {{ d.manage_agent ? "准备并验收" : "检查连接" }}</button
               ><button class="text-button" @click="page = 'diagnostics'">
                 分层诊断</button
-              ><button class="text-button" @click="edit(d)">编辑</button>
+              ><button class="text-button" @click="edit(d)" :disabled="busy">
+                编辑
+              </button>
             </footer>
           </article>
         </div>
@@ -622,80 +872,107 @@ onUnmounted(() => {
           <h3>尚未保存设备</h3>
           <p>添加已完成配对的源设备，或导入仅含文件引用的配置。</p>
         </div>
-        <section v-if="showEditor" class="panel editor">
+        <dialog
+          ref="editor"
+          class="editor"
+          aria-labelledby="editor-title"
+          @close="showEditor = false"
+          @cancel="busy && $event.preventDefault()"
+        >
           <div class="section-title">
-            <h2>{{ form.id ? "编辑设备" : "添加设备" }}</h2>
-            <button class="text-button" @click="showEditor = false">
-              收起
+            <h2 id="editor-title">{{ form.id ? "编辑设备" : "添加设备" }}</h2>
+            <button
+              class="text-button"
+              aria-label="关闭设备编辑"
+              @click="showEditor = false"
+              :disabled="busy"
+            >
+              <Icon name="close" />
             </button>
           </div>
-          <div class="form-grid">
-            <label
-              >设备名称<input
-                v-model="form.name"
-                aria-label="设备名称"
-                placeholder="例如：工作电脑" /></label
-            ><label
-              >共享 ID<input
-                v-model="form.share_id"
-                aria-label="共享 ID" /></label
-            ><label
-              >Agent HTTPS 地址<input
-                v-model="form.agent_url"
-                aria-label="Agent HTTPS 地址"
-                placeholder="https://设备地址:9443" /></label
-            ><label
-              >SSH 地址与端口<input
-                v-model="form.ssh_address"
-                aria-label="SSH 地址与端口"
-                placeholder="设备地址:22" /></label
-            ><label
-              >SSH 专用用户名<input
-                v-model="form.ssh_user"
-                aria-label="SSH 专用用户名"
-            /></label>
+          <div v-if="error" class="message error" role="alert" tabindex="-1">
+            <span>{{ error }}</span>
           </div>
-          <section class="preparation-options">
-            <h3>连接前的设备准备</h3>
-            <p>
-              新设备先完成一次 SSH 与 HTTPS
-              信任配对。已配对后，由本机自动部署、启动并测试远端 Agent。
-            </p>
-            <label
-              >远端 Agent 配置路径<input
-                v-model="form.remote_agent_config"
-                aria-label="远端 Agent 配置路径"
-                placeholder="首次配对生成的远端配置绝对路径"
-            /></label>
-            <label class="checkbox-label"
-              ><input
-                v-model="form.manage_agent"
-                type="checkbox"
-                aria-label="连接时自动准备远端 Agent"
-              />连接时自动准备远端 Agent，并执行网络测试</label
-            >
-          </section>
-          <div class="trust-note">
-            证书、公钥和凭据都来自已核对的配对过程。选择现有文件，凭据内容保留在原文件中。
-          </div>
-          <label v-for="[key, title] in trustFields" :key="key"
-            >{{ title }}
-            <div class="path-input">
-              <input v-model="form[key]" :aria-label="title" /><button
-                @click="pick(key, title)"
-                :disabled="busy"
+          <fieldset :disabled="busy">
+            <div class="form-grid">
+              <label
+                >设备名称<input
+                  v-model="form.name"
+                  autofocus
+                  aria-label="设备名称"
+                  placeholder="例如：工作电脑" /></label
+              ><label
+                >共享 ID<input
+                  v-model="form.share_id"
+                  aria-label="共享 ID" /></label
+              ><label
+                >Agent HTTPS 地址<input
+                  v-model="form.agent_url"
+                  aria-label="Agent HTTPS 地址"
+                  placeholder="https://设备地址:9443" /></label
+              ><label
+                >SSH 地址与端口<input
+                  v-model="form.ssh_address"
+                  aria-label="SSH 地址与端口"
+                  placeholder="设备地址:22" /></label
+              ><label
+                >SSH 专用用户名<input
+                  v-model="form.ssh_user"
+                  aria-label="SSH 专用用户名"
+              /></label>
+            </div>
+            <section class="preparation-options">
+              <h3>连接前的设备准备</h3>
+              <p>
+                新设备先完成一次 SSH 与 HTTPS
+                信任配对。已配对后，由本机自动部署、启动并测试远端 Agent。
+              </p>
+              <label
+                >远端 Agent 配置路径<input
+                  v-model="form.remote_agent_config"
+                  aria-label="远端 Agent 配置路径"
+                  placeholder="首次配对生成的远端配置绝对路径"
+              /></label>
+              <label class="checkbox-label"
+                ><input
+                  v-model="form.manage_agent"
+                  type="checkbox"
+                  aria-label="连接时自动准备远端 Agent"
+                />连接时自动准备远端 Agent，并执行网络测试</label
               >
-                选择文件
-              </button>
-            </div></label
-          >
+            </section>
+            <div class="trust-note">
+              证书、公钥和凭据都来自已核对的配对过程。选择现有文件，凭据内容保留在原文件中。
+            </div>
+            <label v-for="[key, title] in trustFields" :key="key"
+              >{{ title }}
+              <div class="path-input">
+                <input v-model="form[key]" :aria-label="title" /><button
+                  @click="pick(key, title)"
+                  :disabled="busy"
+                >
+                  选择文件
+                </button>
+              </div></label
+            >
+          </fieldset>
           <footer>
-            <button class="secondary" @click="showEditor = false">返回</button
+            <button
+              class="secondary"
+              @click="showEditor = false"
+              :disabled="busy"
+            >
+              返回</button
             ><button class="primary" @click="save" :disabled="busy">
-              保存设备
+              <span
+                v-if="operation === 'save'"
+                class="spinner"
+                aria-hidden="true"
+              ></span
+              >{{ operation === "save" ? "正在保存…" : "保存设备" }}
             </button>
           </footer>
-        </section>
+        </dialog>
       </template>
       <div v-show="page === 'diagnostics'">
         <DiagnosticPanel :devices="devices" />
@@ -710,21 +987,32 @@ onUnmounted(() => {
           <time>{{ new Date(entry.updated_at).toLocaleString("zh-CN") }}</time
           ><span :class="['badge', entry.state]">{{ word(entry.state) }}</span
           ><span
-            ><small>任务 {{ entry.task_id.slice(0, 12) }}</small>
+            ><small :title="entry.task_id">{{ taskName(entry.task_id) }}</small>
             <p v-if="entry.error" class="task-error">{{ entry.error }}</p></span
           >
+          <button
+            class="text-button log-jump"
+            @click="jumpToTask(entry.task_id)"
+            :disabled="!tasks.some((t) => t.id === entry.task_id)"
+          >
+            查看任务 <Icon name="arrow" />
+          </button>
         </div>
-        <div class="section-title list-title">
-          <h2>本次操作</h2>
-          <span>当前桌面会话</span>
-        </div>
-        <p v-if="!entries.length" class="muted">暂无活动记录。</p>
-        <div v-for="(entry, i) in entries" :key="i" class="log">
-          <time>{{ entry.time }}</time
-          ><span>{{ entry.text }}</span>
-        </div>
+        <details class="session-activity">
+          <summary>
+            本次操作 <span>当前会话 · {{ entries.length }} 条</span>
+          </summary>
+          <p v-if="!entries.length" class="muted">暂无活动记录。</p>
+          <div v-for="(entry, i) in entries" :key="i" class="log">
+            <time>{{ entry.time }}</time
+            ><span>{{ entry.text }}</span>
+          </div>
+        </details>
       </section>
-      <footer class="page-footer">版本可信 · 分块续传 · 接收端确认</footer>
+      <footer class="page-footer" :class="{ 'refresh-failed': refreshError }">
+        {{ refreshError ? "任务刷新失败" : "任务状态最近刷新" }} ·
+        {{ refreshedAt || "尚未完成" }} · 本机时间
+      </footer>
     </main>
   </div>
 </template>

@@ -6,6 +6,8 @@
 
 工程路径：`C:\Users\Lenovo\OneDrive\Desktop\HopSend`。
 
+P2.6 优化主题、任务反馈、设备观察与编辑抽屉、日志跳转和下载完成定位；上传支持拖入选择，原生拖放尚待现场验收，具体实测与限制见 [P2.6 验收](docs/validation/P2.6.md)。
+
 ## 名称与输出
 
 | 项目 | 约定 |
@@ -74,6 +76,8 @@ Wails + Vue 3 + TypeScript，Go 引擎，SQLite，HTTPS/JSON Agent，Windows Ope
 所有 Go 入口共用根 `go.mod`；不为每个入口创建独立模块，不使用 `go.work`。
 
 默认规划参数：32 MiB 逻辑块、每节点 2 个活动块、全局 4 个活动块；这些是待实测的初始值。
+
+下一步先执行 P2.7 单源性能基线和 P2.8 可运行分发/用户登录驻留，再开展 P3 多源；P4.1 保留性能回归与发布边界注入。当前 EXE 运行不依赖 Go/Node，但正式安装器、独立驻留和跨平台支持尚未交付，详见[阶段规划](docs/04-roadmap.md)。
 
 ## 当前可运行命令
 

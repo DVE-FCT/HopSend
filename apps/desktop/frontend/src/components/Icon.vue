@@ -14,6 +14,8 @@ const paths: Record<string, string> = {
   refresh: "M20 8a8 8 0 0 0-14-3L3 8m0-5v5h5M4 16a8 8 0 0 0 14 3l3-3m0 5v-5h-5",
   plus: "M12 4v16M4 12h16",
   arrow: "M4 12h16m-6-6 6 6-6 6",
+  close: "M6 6l12 12M18 6 6 18",
+  folder: "M3 6h7l2 2h9v12H3zM3 6V4h7l2 2",
 };
 </script>
 <template>

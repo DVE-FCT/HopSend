@@ -2,6 +2,7 @@
 import { ref, watchEffect } from "vue";
 import { backend, type Device, type NetworkReport } from "../bridge";
 import Icon from "./Icon.vue";
+import { duration } from "../format";
 const props = defineProps<{ devices: Device[] }>();
 const selected = ref(""),
   manifest = ref(""),
@@ -92,7 +93,12 @@ async function stop() {
       </button>
     </div>
   </section>
-  <section v-if="busy" class="panel empty" role="status">
+  <section
+    v-if="busy"
+    class="panel loading-state"
+    role="status"
+    aria-busy="true"
+  >
     <span class="spinner"></span>
     <h3>正在检查连接与信任</h3>
     <p>结果来自本次实际探测，请保持设备在线。</p>
@@ -132,7 +138,7 @@ async function stop() {
           <p>{{ layer.detail }}</p>
         </div>
         <div class="layer-status">
-          <small>{{ layer.milliseconds }} ms</small
+          <small>{{ duration(layer.milliseconds, layer.state) }}</small
           ><span :class="['badge', layer.state]">{{
             states[layer.state] || layer.state
           }}</span>
