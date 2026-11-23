@@ -25,6 +25,7 @@ export interface Task {
   error?: string;
 }
 interface API {
+  PickFolder(): Promise<string>;
   StartUpload(
     device: string,
     share: string,

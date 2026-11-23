@@ -41,7 +41,7 @@ func PrepareUpload(ctx context.Context, r DownloadRequest, source, target string
 		return r, err
 	}
 	r.SnapshotDirectory = filepath.Join(filepath.Dir(absolute), "upload-content")
-	m, err := manifest.Publish(ctx, source, r.SnapshotDirectory, r.ShareID, chunkSize)
+	m, err := Publish(ctx, source, r.SnapshotDirectory, r.ShareID, chunkSize)
 	if err != nil {
 		return r, err
 	}

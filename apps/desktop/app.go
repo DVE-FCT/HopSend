@@ -178,6 +178,10 @@ func (a *App) findDevice(id string) (Device, error) {
 func (a *App) PickFile(title string) (string, error) {
 	return runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{Title: title})
 }
+
+func (a *App) PickFolder() (string, error) {
+	return runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{Title: "选择要上传的文件夹"})
+}
 func (a *App) PickDestination(name string) (string, error) {
 	return runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{Title: "选择下载保存位置", DefaultFilename: name})
 }
