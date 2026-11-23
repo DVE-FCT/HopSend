@@ -28,6 +28,7 @@ type DownloadRequest struct {
 	Retries                          int
 	RetryDelay                       time.Duration
 	OnProgress                       func(engine.Progress) `json:"-"`
+	OnBytes                          func(int64)           `json:"-"`
 }
 
 func Transfer(ctx context.Context, r DownloadRequest) (engine.DownloadResult, error) {
@@ -147,7 +148,9 @@ func downloadAttempt(ctx context.Context, r DownloadRequest) (engine.DownloadRes
 	}
 	return engine.Download(ctx, engine.DownloadOptions{Manifest: published.Manifest, RemotePath: published.SFTPPath, Destination: r.Destination, Workers: r.Workers, OnProgress: r.OnProgress, Journal: store, Source: source,
 		OpenSource: func(ctx context.Context) (engine.RangeSource, error) {
-			c, err := transport.Dial(ctx, r.SSH)
+			cfg := r.SSH
+			cfg.OnBytes = r.OnBytes
+			c, err := transport.Dial(ctx, cfg)
 			if err != nil {
 				return nil, err
 			}

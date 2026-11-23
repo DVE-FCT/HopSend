@@ -1,17 +1,71 @@
 {
-  "$schema":"https://json-schema.org/draft/2020-12/schema",
-  "$id":"https://github.com/DVE-FCT/HopSend/contracts/events/v1/events.schema.json",
-  "title":"task:progress Wails 事件载荷",
-  "type":"object",
-  "additionalProperties":false,
-  "required":["task_id","state","verified_bytes","total_bytes","completed_chunks","updated_at"],
-  "properties":{
-    "task_id":{"type":"string","pattern":"^[a-f0-9]{64}$"},
-    "state":{"enum":["connecting","pending","rechecking","downloading","uploading","verifying","publishing","waiting_network","paused","completed","failed","cancelled"]},
-    "verified_bytes":{"type":"integer","minimum":0},
-    "total_bytes":{"type":"integer","minimum":0},
-    "completed_chunks":{"type":"integer","minimum":0},
-    "updated_at":{"type":"string","format":"date-time"},
-    "error":{"type":"string"}
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/DVE-FCT/HopSend/contracts/events/v1/events.schema.json",
+  "title": "task:progress Wails 事件载荷",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "task_id",
+    "state",
+    "verified_bytes",
+    "total_bytes",
+    "completed_chunks",
+    "updated_at"
+  ],
+  "properties": {
+    "task_id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "state": {
+      "enum": [
+        "connecting",
+        "pending",
+        "rechecking",
+        "downloading",
+        "uploading",
+        "verifying",
+        "publishing",
+        "waiting_network",
+        "paused",
+        "completed",
+        "failed",
+        "cancelled"
+      ]
+    },
+    "verified_bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "total_bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "completed_chunks": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "error": {
+      "type": "string"
+    },
+    "transferred_bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "speed_bytes_per_second": {
+      "type": "number",
+      "minimum": 0
+    },
+    "eta_seconds": {
+      "type": "number",
+      "minimum": 0
+    },
+    "metrics_available": {
+      "type": "boolean"
+    }
   }
 }

@@ -156,4 +156,8 @@ func TestActualSFTPConnectionDropRetriesAfterWorkersExit(t *testing.T) {
 	if result.ReusedChunks == 0 {
 		t.Fatal("confirmed blocks not reused")
 	}
+	status, _ := m.Status(id)
+	if !status.MetricsAvailable || status.TransferredBytes < int64(len(data)) || status.VerifiedBytes != int64(len(data)) || status.SpeedBytesPerSecond != 0 {
+		t.Fatal("retries must count actual payload without inflating verified progress", status)
+	}
 }

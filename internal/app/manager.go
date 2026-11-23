@@ -18,11 +18,16 @@ var ErrCancelled = errors.New("任务已取消")
 
 type TaskStatus struct {
 	engine.Progress
-	Error     string `json:"error,omitempty"`
-	UpdatedAt string `json:"updated_at"`
+	Error               string  `json:"error,omitempty"`
+	TransferredBytes    int64   `json:"transferred_bytes"`
+	SpeedBytesPerSecond float64 `json:"speed_bytes_per_second"`
+	ETASeconds          float64 `json:"eta_seconds"`
+	MetricsAvailable    bool    `json:"metrics_available"`
+	UpdatedAt           string  `json:"updated_at"`
 }
 
 type execution struct {
+	meter  *transferMeter
 	cancel context.CancelCauseFunc
 	done   chan struct{}
 	result engine.DownloadResult
@@ -32,6 +37,7 @@ type execution struct {
 // Manager owns live task lifetimes. A stop completes only after the Download
 // call has joined its workers and released the destination ownership handle.
 type Manager struct {
+	events   *eventLog
 	database string
 	mu       sync.Mutex
 	active   map[string]*execution
@@ -45,15 +51,24 @@ func NewManager(database string, changed func(TaskStatus)) *Manager {
 	if database == "" {
 		database = DefaultDatabase()
 	}
-	return &Manager{database: database, active: make(map[string]*execution), latest: make(map[string]TaskStatus), finished: make(map[string]*execution), changed: changed, run: Transfer}
+	return &Manager{events: newEventLog(database), database: database, active: make(map[string]*execution), latest: make(map[string]TaskStatus), finished: make(map[string]*execution), changed: changed, run: Transfer}
 }
 
 func (m *Manager) update(status TaskStatus) {
 	status.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	m.mu.Lock()
+	e := m.active[status.TaskID]
+	if e == nil {
+		e = m.finished[status.TaskID]
+	}
+	if e != nil {
+		e.meter.progress(status)
+		status = e.meter.decorate(status)
+	}
 	m.latest[status.TaskID] = status
 	changed := m.changed
 	m.mu.Unlock()
+	m.events.append(status)
 	if changed != nil {
 		changed(status)
 	}
@@ -63,6 +78,13 @@ func (m *Manager) Status(id string) (TaskStatus, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	s, ok := m.latest[id]
+	e := m.active[id]
+	if e == nil {
+		e = m.finished[id]
+	}
+	if e != nil {
+		s = e.meter.decorate(s)
+	}
 	return s, ok
 }
 
@@ -81,7 +103,7 @@ func (m *Manager) Start(parent context.Context, r DownloadRequest) (string, erro
 	r.Destination, r.Database = destination, m.database
 	id := engine.TaskID(r.ManifestID, destination)
 	ctx, cancel := context.WithCancelCause(parent)
-	e := &execution{cancel: cancel, done: make(chan struct{})}
+	e := &execution{meter: newTransferMeter(), cancel: cancel, done: make(chan struct{})}
 	m.mu.Lock()
 	if _, ok := m.active[id]; ok {
 		m.mu.Unlock()
@@ -92,6 +114,13 @@ func (m *Manager) Start(parent context.Context, r DownloadRequest) (string, erro
 	delete(m.finished, id)
 	m.mu.Unlock()
 	m.update(TaskStatus{Progress: engine.Progress{TaskID: id, State: "connecting"}})
+	originalBytes := r.OnBytes
+	r.OnBytes = func(n int64) {
+		e.meter.add(n)
+		if originalBytes != nil {
+			originalBytes(n)
+		}
+	}
 	original := r.OnProgress
 	r.OnProgress = func(p engine.Progress) {
 		m.update(TaskStatus{Progress: p})
@@ -215,3 +244,5 @@ func (m *Manager) Close(ctx context.Context) error {
 	}
 	return nil
 }
+
+func (m *Manager) Logs() ([]TaskStatus, error) { return m.events.read() }

@@ -23,14 +23,16 @@ type Config struct {
 	PrivateKeyPath string
 	KnownHostsPath string
 	Timeout        time.Duration
+	OnBytes        func(int64) `json:"-"`
 }
 
 // Client owns one SSH connection. Cancelling its Dial context closes all its reads.
 // Use a separate Client per independently cancellable worker.
 type Client struct {
-	ssh  *ssh.Client
-	sftp *pkgsftp.Client
-	stop func() bool
+	ssh     *ssh.Client
+	sftp    *pkgsftp.Client
+	stop    func() bool
+	onBytes func(int64)
 }
 
 func Dial(ctx context.Context, cfg Config) (*Client, error) {
@@ -107,7 +109,7 @@ func Dial(ctx context.Context, cfg Config) (*Client, error) {
 		return nil, err
 	}
 	success = true
-	return &Client{ssh: sshClient, sftp: fileClient, stop: stop}, nil
+	return &Client{ssh: sshClient, sftp: fileClient, stop: stop, onBytes: cfg.OnBytes}, nil
 }
 
 func contextError(ctx context.Context, err error) error {
@@ -142,7 +144,7 @@ func (c *Client) ReadRange(ctx context.Context, path string, offset, length int6
 	defer file.Close()
 	// A bounded 1 MiB buffer allows SFTP ReadAt to pipeline packet requests on
 	// higher-latency links. SectionReader still enforces the exact byte range.
-	n, err := io.CopyBuffer(output, io.NewSectionReader(file, offset, length), make([]byte, 1<<20))
+	n, err := io.CopyBuffer(payloadWriter{output: output, count: c.onBytes}, io.NewSectionReader(file, offset, length), make([]byte, 1<<20))
 	if err == nil && n != length {
 		err = io.ErrUnexpectedEOF
 	}
@@ -184,6 +186,9 @@ func (c *Client) WriteRange(ctx context.Context, path string, offset, length int
 		var count int
 		count, err = f.WriteAt(buffer[:n], offset+written)
 		written += int64(count)
+		if count > 0 && c.onBytes != nil {
+			c.onBytes(int64(count))
+		}
 		if err != nil {
 			break
 		}
@@ -200,4 +205,19 @@ func (c *Client) WriteRange(ctx context.Context, path string, offset, length int
 		err = io.ErrShortWrite
 	}
 	return written, contextError(ctx, err)
+}
+
+// Counts delivered download payload and acknowledged upload payload, excluding
+// protocol overhead. Upload byte receipt is distinct from Agent hash confirmation.
+type payloadWriter struct {
+	output io.Writer
+	count  func(int64)
+}
+
+func (w payloadWriter) Write(p []byte) (int, error) {
+	n, err := w.output.Write(p)
+	if n > 0 && w.count != nil {
+		w.count(int64(n))
+	}
+	return n, err
 }

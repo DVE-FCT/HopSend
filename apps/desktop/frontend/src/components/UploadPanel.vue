@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watchEffect } from "vue";
 import { backend, type Device } from "../bridge";
+import Icon from "./Icon.vue";
 const props = defineProps<{ devices: Device[] }>();
 const emit = defineEmits<{ started: [id: string] }>();
 const device = ref(""),
@@ -72,12 +73,12 @@ async function chooseFolder() {
       /></label>
     </div>
     <label
-      >本机源文件
+      >本机文件或文件夹
       <div class="path-input">
         <input
           v-model="source"
           aria-label="本机源文件"
-          placeholder="选择要发送的文件"
+          placeholder="选择要发送的文件或文件夹"
         /><button @click="choose" :disabled="busy">选择文件</button
         ><button @click="chooseFolder" :disabled="busy">选择文件夹</button>
       </div></label
@@ -99,7 +100,7 @@ async function chooseFolder() {
         @click="start"
         :disabled="busy || !device || !source || !share"
       >
-        开始上传 ↗
+        开始上传 <Icon name="arrow" />
       </button>
     </div>
   </section>

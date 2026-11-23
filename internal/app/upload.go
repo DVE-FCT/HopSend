@@ -136,7 +136,9 @@ func uploadAttempt(ctx context.Context, r DownloadRequest) (engine.DownloadResul
 	sum := sha256.Sum256([]byte(r.Destination))
 	lockPath := filepath.Join(filepath.Dir(r.Database), "upload-"+hex.EncodeToString(sum[:])+".lock")
 	return engine.Upload(ctx, engine.UploadOptions{Manifest: m, Snapshot: filepath.Join(r.SnapshotDirectory, "objects", m.ContentID), Destination: r.Destination, LockPath: lockPath, Session: session, Workers: r.Workers, Receiver: client, Journal: store, Source: source, OnProgress: r.OnProgress, OpenSink: func(ctx context.Context) (engine.RangeSink, error) {
-		c, err := transport.Dial(ctx, r.SSH)
+		cfg := r.SSH
+		cfg.OnBytes = r.OnBytes
+		c, err := transport.Dial(ctx, cfg)
 		if err != nil {
 			return nil, err
 		}
