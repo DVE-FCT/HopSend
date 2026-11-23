@@ -67,6 +67,7 @@ HopSend/
 14. [文件夹与路径](docs/15-folder-transfer.md)：目录包、安全展开、空目录、长路径与缓存保留。
 15. [诊断、监控与界面](docs/16-diagnostics-monitoring.md)：分层检查、真实字节口径、速度/ETA、持久记录及主题。
 16. [连接前设备准备](docs/17-device-preparation.md)：自动部署/启动、HTTPS/SFTP 实测及首次信任边界。
+17. [单源性能基线](docs/18-single-source-benchmark.md)：有界的真实样本、SFTP/引擎对照、并发矩阵及参数依据。
 
 ## 技术基线
 
@@ -75,9 +76,9 @@ Wails + Vue 3 + TypeScript，Go 引擎，SQLite，HTTPS/JSON Agent，Windows Ope
 一个仓库、根目录一个 Go 模块。Wails 项目根目录是 `apps/desktop`，其前端固定放在 `apps/desktop/frontend`。
 所有 Go 入口共用根 `go.mod`；不为每个入口创建独立模块，不使用 `go.work`。
 
-默认规划参数：32 MiB 逻辑块、每节点 2 个活动块、全局 4 个活动块；这些是待实测的初始值。
+默认规划参数：32 MiB 逻辑块、每节点 2 个活动块。P2.7 已完成两设备直连矩阵实测，保留这组参数为当前保守起点，完整结果包含其他组合更快的条件；全局 4 个活动块仍待多源验证，见[单源性能基线](docs/18-single-source-benchmark.md)。
 
-下一步先执行 P2.7 单源性能基线和 P2.8 可运行分发/用户登录驻留，再开展 P3 多源；P4.1 保留性能回归与发布边界注入。当前 EXE 运行不依赖 Go/Node，但正式安装器、独立驻留和跨平台支持尚未交付，详见[阶段规划](docs/04-roadmap.md)。
+P2.7 已完成；下一步执行 P2.8 可运行分发/用户登录驻留，再开展 P3 多源；P4.1 保留性能回归与发布边界注入。当前 EXE 运行不依赖 Go/Node，但正式安装器、独立驻留和跨平台支持尚未交付，详见[阶段规划](docs/04-roadmap.md)。
 
 ## 当前可运行命令
 

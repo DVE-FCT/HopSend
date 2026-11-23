@@ -6,5 +6,12 @@
   "max_active_chunks_global": 4,
   "ui_snapshot_interval_ms": 250,
   "hash_algorithm": "sha256",
-  "status": "planned_requires_benchmark_validation"
+  "status": "single_source_baseline_recorded_multi_source_pending",
+  "single_source_basis": {
+    "record": "docs/validation/P2.7.md",
+    "chunk_sizes_mib_measured": [8, 32, 64],
+    "workers_measured": [1, 2, 4],
+    "decision": "retain_32_mib_and_2_workers_as_conservative_start_not_universal_fastest"
+  },
+  "global_budget_benchmarked": false
 }
