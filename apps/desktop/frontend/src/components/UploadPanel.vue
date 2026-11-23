@@ -92,7 +92,7 @@ async function chooseFolder() {
     <div class="create-footer">
       <span>{{
         preparing
-          ? "正在生成不可变上传版本，请稍候……"
+          ? "正在准备设备、测试连接并生成上传版本，请稍候……"
           : "写入结束后等待接收端校验，接收端发布后才完成。"
       }}</span
       ><button

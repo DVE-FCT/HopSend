@@ -9,6 +9,14 @@ export interface Device {
   key_file: string;
   known_hosts_file: string;
   share_id: string;
+  remote_agent_config?: string;
+  manage_agent: boolean;
+}
+export interface PreparationReport {
+  ready: boolean;
+  managed: boolean;
+  observed_at: string;
+  steps: { name: string; state: string; detail: string }[];
 }
 export interface Task {
   direction: string;
@@ -44,6 +52,7 @@ export type TaskEvent = Pick<
   "task_id" | "state" | "error" | "updated_at"
 >;
 interface API {
+  PrepareDevice(id: string): Promise<PreparationReport>;
   DiagnoseDevice(id: string, manifest: string): Promise<NetworkReport>;
   StopDiagnostic(): Promise<void>;
   Activity(): Promise<TaskEvent[]>;

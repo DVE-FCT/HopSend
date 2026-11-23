@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
-import { backend, type Device, type Task, type TaskEvent } from "./bridge";
+import {
+  backend,
+  type Device,
+  type Task,
+  type TaskEvent,
+  type PreparationReport,
+} from "./bridge";
 import UploadPanel from "./components/UploadPanel.vue";
 import DiagnosticPanel from "./components/DiagnosticPanel.vue";
 import Icon from "./components/Icon.vue";
@@ -21,6 +27,8 @@ watch(
 );
 const taskFilter = ref("all");
 const history = ref<TaskEvent[]>([]);
+const preparation = ref<PreparationReport>();
+const preparing = ref("");
 const titles: Record<string, string> = {
   tasks: "传输任务",
   devices: "设备与信任",
@@ -54,6 +62,8 @@ const empty = (): Device => ({
   key_file: "",
   known_hosts_file: "",
   share_id: "files",
+  remote_agent_config: "",
+  manage_agent: false,
 });
 const form = reactive(empty());
 const entries = ref<{ time: string; text: string }[]>([]);
@@ -162,7 +172,7 @@ async function load() {
   await refresh();
 }
 function edit(d?: Device) {
-  Object.assign(form, d || empty());
+  Object.assign(form, empty(), d || {});
   showEditor.value = true;
   page.value = "devices";
 }
@@ -170,7 +180,7 @@ async function importConfig() {
   await perform(async () => {
     const d = await backend().ImportDevice();
     if (d.name) {
-      Object.assign(form, d);
+      Object.assign(form, empty(), d);
       showEditor.value = true;
       page.value = "devices";
       notice.value = "配置已读入，请核对后保存。";
@@ -183,8 +193,21 @@ async function save() {
     selected.value = d.id;
     showEditor.value = false;
     await load();
-    notice.value = "设备已保存。";
+    notice.value = d.manage_agent
+      ? "设备已保存，正在准备远端并执行网络验收……"
+      : "配对信息已保存；启用自动准备后可在连接时恢复远端 Agent。";
     log(`保存设备：${d.name}`);
+    if (d.manage_agent) {
+      preparation.value = undefined;
+      preparing.value = d.id;
+      try {
+        preparation.value = await backend().PrepareDevice(d.id);
+        notice.value =
+          "设备已就绪：环境、程序、HTTPS 认证与实际 SFTP 字节测试通过。";
+      } finally {
+        preparing.value = "";
+      }
+    }
   });
 }
 const trustFields = [
@@ -201,6 +224,18 @@ async function pick(key: (typeof trustFields)[number][0], title: string) {
 }
 async function check(id: string) {
   await perform(async () => {
+    const d = devices.value.find((d) => d.id === id);
+    if (d?.manage_agent) {
+      preparation.value = undefined;
+      preparing.value = id;
+      try {
+        preparation.value = await backend().PrepareDevice(id);
+        notice.value = "设备已就绪，传输前还会自动预检。";
+      } finally {
+        preparing.value = "";
+      }
+      return;
+    }
     const r = await backend().CheckDevice(id);
     notice.value = r.message;
     log(`${r.message} · ${r.observed_at}`);
@@ -537,16 +572,46 @@ onUnmounted(() => {
           <h2>可信源设备</h2>
           <button class="primary" @click="edit()">＋ 添加设备</button>
         </div>
+        <section v-if="preparing" class="panel preparation">
+          <span class="spinner"></span>
+          <h3>正在准备设备</h3>
+          <p>
+            自动检查环境、校验部署 Agent、启动并执行 HTTPS 与 SFTP
+            实测。首次部署可能需要一两分钟。
+          </p>
+        </section>
+        <section v-else-if="preparation" class="panel preparation">
+          <div class="section-title">
+            <h2>{{ preparation.ready ? "设备已就绪" : "设备准备未完成" }}</h2>
+            <span>{{
+              new Date(preparation.observed_at).toLocaleString("zh-CN")
+            }}</span>
+          </div>
+          <div
+            v-for="step in preparation.steps"
+            :key="step.name"
+            class="preparation-step"
+          >
+            <span :class="['badge', step.state]">{{
+              step.state === "ok" ? "通过" : "失败"
+            }}</span>
+            <p>{{ step.detail }}</p>
+          </div>
+        </section>
         <div class="device-grid">
           <article v-for="d in devices" :key="d.id" class="panel device">
             <div class="device-icon"><Icon name="device" /></div>
             <h3>{{ d.name }}</h3>
             <p>{{ d.agent_url }}</p>
             <p>SSH {{ d.ssh_address }} · {{ d.ssh_user }}</p>
-            <small>信任记录与 API 凭据分别验证</small>
+            <small>{{
+              d.manage_agent
+                ? "已启用自动准备 · 连接时检查并恢复 Agent"
+                : "仅保存配对信息 · 尚未启用自动准备"
+            }}</small>
             <footer>
               <button class="secondary" @click="check(d.id)" :disabled="busy">
-                检查连接</button
+                {{ d.manage_agent ? "准备并验收" : "检查连接" }}</button
               ><button class="text-button" @click="page = 'diagnostics'">
                 分层诊断</button
               ><button class="text-button" @click="edit(d)">编辑</button>
@@ -590,6 +655,26 @@ onUnmounted(() => {
                 aria-label="SSH 专用用户名"
             /></label>
           </div>
+          <section class="preparation-options">
+            <h3>连接前的设备准备</h3>
+            <p>
+              新设备先完成一次 SSH 与 HTTPS
+              信任配对。已配对后，由本机自动部署、启动并测试远端 Agent。
+            </p>
+            <label
+              >远端 Agent 配置路径<input
+                v-model="form.remote_agent_config"
+                aria-label="远端 Agent 配置路径"
+                placeholder="首次配对生成的远端配置绝对路径"
+            /></label>
+            <label class="checkbox-label"
+              ><input
+                v-model="form.manage_agent"
+                type="checkbox"
+                aria-label="连接时自动准备远端 Agent"
+              />连接时自动准备远端 Agent，并执行网络测试</label
+            >
+          </section>
           <div class="trust-note">
             证书、公钥和凭据都来自已核对的配对过程。选择现有文件，凭据内容保留在原文件中。
           </div>

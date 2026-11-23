@@ -36,6 +36,22 @@ type readFixture struct {
 	once    sync.Once
 }
 
+func (f *readFixture) Filecmd(request *pkgsftp.Request) error {
+	path := strings.TrimPrefix(request.Filepath, "/")
+	prefix := strings.TrimPrefix(filepath.ToSlash(f.root.Name()), "/") + "/"
+	path = strings.TrimPrefix(path, prefix)
+	if !fs.ValidPath(path) || strings.ContainsAny(path, `\:`) {
+		return fs.ErrPermission
+	}
+	if request.Method == "Remove" {
+		return f.root.Remove(path)
+	}
+	if request.Method == "Mkdir" {
+		return f.root.Mkdir(path, 0700)
+	}
+	return fs.ErrPermission
+}
+
 func (f *readFixture) Filewrite(request *pkgsftp.Request) (io.WriterAt, error) {
 	path := strings.TrimPrefix(request.Filepath, "/")
 	rootPrefix := strings.TrimPrefix(filepath.ToSlash(f.root.Name()), "/") + "/"
@@ -43,7 +59,11 @@ func (f *readFixture) Filewrite(request *pkgsftp.Request) (io.WriterAt, error) {
 	if !fs.ValidPath(path) || strings.ContainsAny(path, `\:`) {
 		return nil, fs.ErrPermission
 	}
-	return f.root.OpenFile(path, os.O_WRONLY, 0)
+	flags := os.O_WRONLY
+	if p := request.Pflags(); p.Creat && p.Excl {
+		flags |= os.O_CREATE | os.O_EXCL
+	}
+	return f.root.OpenFile(path, flags, 0600)
 }
 
 func (f *readFixture) Fileread(request *pkgsftp.Request) (io.ReaderAt, error) {
@@ -96,7 +116,7 @@ func startSFTP(t *testing.T, delay time.Duration) (transport.Config, []byte, <-c
 	return cfg, data, started
 }
 
-func startSFTPControlled(t *testing.T, delay time.Duration) (transport.Config, []byte, <-chan struct{}, func()) {
+func startSFTPControlled(t *testing.T, delay time.Duration, execHandler ...func(string, ssh.Channel)) (transport.Config, []byte, <-chan struct{}, func()) {
 	t.Helper()
 	dir := t.TempDir()
 	data := bytes.Repeat([]byte("HopSend-中文-0123456789"), 131072)
@@ -179,11 +199,21 @@ func startSFTPControlled(t *testing.T, delay time.Duration) (transport.Config, [
 						defer wg.Done()
 						defer channel.Close()
 						for request := range requests {
+							if request.Type == "exec" && len(execHandler) > 0 {
+								var command struct{ Command string }
+								ok := ssh.Unmarshal(request.Payload, &command) == nil
+								_ = request.Reply(ok, nil)
+								if ok {
+									execHandler[0](command.Command, channel)
+									_, _ = channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{0}))
+								}
+								return
+							}
 							var subsystem struct{ Name string }
 							ok := request.Type == "subsystem" && ssh.Unmarshal(request.Payload, &subsystem) == nil && subsystem.Name == "sftp"
 							_ = request.Reply(ok, nil)
 							if ok {
-								server := pkgsftp.NewRequestServer(channel, pkgsftp.Handlers{FileGet: fixture, FilePut: fixture})
+								server := pkgsftp.NewRequestServer(channel, pkgsftp.Handlers{FileGet: fixture, FilePut: fixture, FileCmd: fixture})
 								_ = server.Serve()
 								_ = server.Close()
 								return
