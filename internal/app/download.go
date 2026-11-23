@@ -17,6 +17,8 @@ import (
 
 type DownloadRequest struct {
 	Direction                        string
+	ManagedAgentConfig               string
+	ManagedAgentBinary               string
 	SnapshotDirectory                string
 	UploadTarget                     string
 	Agent                            nodeclient.Config
@@ -125,6 +127,9 @@ func Download(ctx context.Context, r DownloadRequest) (engine.DownloadResult, er
 }
 
 func downloadAttempt(ctx context.Context, r DownloadRequest) (engine.DownloadResult, error) {
+	if err := prepareAgent(ctx, r); err != nil {
+		return engine.DownloadResult{}, err
+	}
 	client, err := nodeclient.New(r.Agent)
 	if err != nil {
 		return engine.DownloadResult{}, err

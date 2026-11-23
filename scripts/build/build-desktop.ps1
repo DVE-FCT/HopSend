@@ -17,4 +17,6 @@ try {
     $hopDesktopOut=Join-Path $hopsendRoot 'dist/desktop'
     New-Item -ItemType Directory -Path $hopDesktopOut -Force|Out-Null
     Copy-Item -LiteralPath 'build/bin/hopsend.exe' -Destination (Join-Path $hopDesktopOut 'hopsend.exe') -Force
+    & go build -trimpath -o (Join-Path $hopDesktopOut 'hopsend-agent.exe') ../agent
+    if($LASTEXITCODE -ne 0){throw '配套 Agent 构建失败'}
 } finally {Pop-Location}

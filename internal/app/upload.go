@@ -106,6 +106,9 @@ func Upload(ctx context.Context, r DownloadRequest) (engine.DownloadResult, erro
 }
 
 func uploadAttempt(ctx context.Context, r DownloadRequest) (engine.DownloadResult, error) {
+	if err := prepareAgent(ctx, r); err != nil {
+		return engine.DownloadResult{}, err
+	}
 	root, err := os.OpenRoot(r.SnapshotDirectory)
 	if err != nil {
 		return engine.DownloadResult{}, err

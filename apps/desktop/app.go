@@ -16,26 +16,34 @@ import (
 	"github.com/DVE-FCT/HopSend/internal/app"
 	"github.com/DVE-FCT/HopSend/internal/engine"
 	"github.com/DVE-FCT/HopSend/internal/nodeclient"
+	"github.com/DVE-FCT/HopSend/internal/remoteagent"
 	"github.com/DVE-FCT/HopSend/internal/storage/sqlite"
 	transport "github.com/DVE-FCT/HopSend/internal/transport/sftp"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 type Device struct {
-	ID             string `json:"id"`
-	Name           string `json:"name"`
-	AgentURL       string `json:"agent_url"`
-	SSHAddress     string `json:"ssh_address"`
-	SSHUser        string `json:"ssh_user"`
-	CAFile         string `json:"ca_file"`
-	TokenFile      string `json:"token_file"`
-	KeyFile        string `json:"key_file"`
-	KnownHostsFile string `json:"known_hosts_file"`
-	ShareID        string `json:"share_id"`
+	ID                string `json:"id"`
+	Name              string `json:"name"`
+	AgentURL          string `json:"agent_url"`
+	SSHAddress        string `json:"ssh_address"`
+	SSHUser           string `json:"ssh_user"`
+	CAFile            string `json:"ca_file"`
+	TokenFile         string `json:"token_file"`
+	KeyFile           string `json:"key_file"`
+	KnownHostsFile    string `json:"known_hosts_file"`
+	ShareID           string `json:"share_id"`
+	RemoteAgentConfig string `json:"remote_agent_config,omitempty"`
+	ManageAgent       bool   `json:"manage_agent"`
 }
 
 func (d Device) request() app.DownloadRequest {
-	return app.DownloadRequest{Agent: nodeclient.Config{URL: d.AgentURL, CACertificate: d.CAFile, TokenFile: d.TokenFile}, SSH: transport.Config{Address: d.SSHAddress, User: d.SSHUser, PrivateKeyPath: d.KeyFile, KnownHostsPath: d.KnownHostsFile}, ShareID: d.ShareID, Workers: 2, ReadTimeout: 2 * time.Minute, Retries: 6}
+	r := app.DownloadRequest{Agent: nodeclient.Config{URL: d.AgentURL, CACertificate: d.CAFile, TokenFile: d.TokenFile}, SSH: transport.Config{Address: d.SSHAddress, User: d.SSHUser, PrivateKeyPath: d.KeyFile, KnownHostsPath: d.KnownHostsFile}, ShareID: d.ShareID, Workers: 2, ReadTimeout: 2 * time.Minute, Retries: 6}
+	if d.ManageAgent {
+		r.ManagedAgentConfig = d.RemoteAgentConfig
+		r.ManagedAgentBinary = app.AgentBinary()
+	}
+	return r
 }
 
 type TaskView struct {
@@ -105,6 +113,7 @@ func (a *App) beforeClose(context.Context) bool {
 	if a.store != nil {
 		_ = a.store.Close()
 	}
+	remoteagent.Default.Close()
 	return false
 }
 func (a *App) Ready() error {
@@ -130,6 +139,9 @@ func (a *App) SaveDevice(d Device) (Device, error) {
 	}
 	if d.Name == "" || d.AgentURL == "" || d.SSHAddress == "" || d.SSHUser == "" || d.CAFile == "" || d.TokenFile == "" || d.KeyFile == "" || d.KnownHostsFile == "" || d.ShareID == "" {
 		return d, errors.New("请完整填写设备连接与信任文件")
+	}
+	if d.ManageAgent && d.RemoteAgentConfig == "" {
+		return d, errors.New("启用自动准备时，需要填写首次配对生成的远端 Agent 配置路径")
 	}
 	if d.ID == "" {
 		b := make([]byte, 8)
@@ -211,6 +223,13 @@ func (a *App) CheckDevice(id string) (map[string]string, error) {
 		return nil, err
 	}
 	r := d.request()
+	if d.ManageAgent {
+		_, err := a.PrepareDevice(id)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]string{"message": "设备准备、HTTPS/SSH 认证及真实 SFTP 字节测试全部通过", "observed_at": time.Now().Format(time.RFC3339)}, nil
+	}
 	ctx, cancel := context.WithTimeout(a.ctx, 20*time.Second)
 	defer cancel()
 	c, err := nodeclient.New(r.Agent)
@@ -240,6 +259,11 @@ func (a *App) StartDownload(deviceID, manifestID, destination string) (string, e
 		return "", err
 	}
 	r := d.request()
+	if d.ManageAgent {
+		if _, err = a.PrepareDevice(deviceID); err != nil {
+			return "", err
+		}
+	}
 	r.ManifestID, r.Destination = manifestID, destination
 	id, err := a.manager.Start(a.ctx, r)
 	if err == nil {
@@ -259,6 +283,11 @@ func (a *App) StartUpload(deviceID, shareID, source, target string) (string, err
 		return "", err
 	}
 	r := d.request()
+	if d.ManageAgent {
+		if _, err = a.PrepareDevice(deviceID); err != nil {
+			return "", err
+		}
+	}
 	r.Database, r.ShareID = a.database, shareID
 	r, err = app.PrepareUpload(a.ctx, r, source, target, 32<<20)
 	if err != nil {
@@ -335,6 +364,11 @@ func (a *App) DiagnoseDevice(id, manifestID string) (app.NetworkReport, error) {
 	a.mu.Unlock()
 	defer func() { cancel(); a.mu.Lock(); a.diagnosticCancel = nil; a.mu.Unlock() }()
 	r := d.request()
+	if d.ManageAgent {
+		if _, err = a.prepareDevice(ctx, id); err != nil {
+			return app.NetworkReport{}, err
+		}
+	}
 	r.ManifestID = manifestID
 	return app.Diagnose(ctx, r), nil
 }
@@ -350,4 +384,24 @@ func (a *App) Activity() ([]app.TaskStatus, error) {
 		return nil, err
 	}
 	return a.manager.Logs()
+}
+
+func (a *App) PrepareDevice(id string) (remoteagent.Report, error) {
+	return a.prepareDevice(a.ctx, id)
+}
+func (a *App) prepareDevice(parent context.Context, id string) (remoteagent.Report, error) {
+	if err := a.Ready(); err != nil {
+		return remoteagent.Report{}, err
+	}
+	d, err := a.findDevice(id)
+	if err != nil {
+		return remoteagent.Report{}, err
+	}
+	if !d.ManageAgent {
+		return remoteagent.Report{}, errors.New("请先在设备设置启用自动准备，并填写已配对的远端 Agent 配置路径")
+	}
+	r := d.request()
+	ctx, cancel := context.WithTimeout(parent, 3*time.Minute)
+	defer cancel()
+	return remoteagent.Default.Prepare(ctx, remoteagent.Request{SSH: r.SSH, Agent: r.Agent, ConfigPath: d.RemoteAgentConfig, Binary: app.AgentBinary(), ShareID: d.ShareID})
 }
