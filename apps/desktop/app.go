@@ -56,6 +56,7 @@ type App struct {
 	store               *sqlite.Store
 	pending             map[string]TaskView
 	startupError        string
+	diagnosticCancel    context.CancelFunc
 }
 
 func NewApp() *App { return &App{} }
@@ -314,4 +315,39 @@ func (a *App) Tasks() ([]TaskView, error) {
 		}
 	}
 	return views, nil
+}
+
+func (a *App) DiagnoseDevice(id, manifestID string) (app.NetworkReport, error) {
+	if err := a.Ready(); err != nil {
+		return app.NetworkReport{}, err
+	}
+	d, err := a.findDevice(id)
+	if err != nil {
+		return app.NetworkReport{}, err
+	}
+	a.mu.Lock()
+	if a.diagnosticCancel != nil {
+		a.mu.Unlock()
+		return app.NetworkReport{}, errors.New("已有诊断正在运行")
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, 11*time.Minute)
+	a.diagnosticCancel = cancel
+	a.mu.Unlock()
+	defer func() { cancel(); a.mu.Lock(); a.diagnosticCancel = nil; a.mu.Unlock() }()
+	r := d.request()
+	r.ManifestID = manifestID
+	return app.Diagnose(ctx, r), nil
+}
+func (a *App) StopDiagnostic() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.diagnosticCancel != nil {
+		a.diagnosticCancel()
+	}
+}
+func (a *App) Activity() ([]app.TaskStatus, error) {
+	if err := a.Ready(); err != nil {
+		return nil, err
+	}
+	return a.manager.Logs()
 }

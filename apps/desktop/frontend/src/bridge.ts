@@ -23,8 +23,30 @@ export interface Task {
   completed_chunks: number;
   updated_at: string;
   error?: string;
+  transferred_bytes: number;
+  speed_bytes_per_second: number;
+  eta_seconds: number;
+  metrics_available: boolean;
 }
+export interface NetworkReport {
+  observed_at: string;
+  path: "direct" | "relay" | "unknown";
+  transfer_verified: boolean;
+  layers: {
+    name: string;
+    state: string;
+    detail: string;
+    milliseconds: number;
+  }[];
+}
+export type TaskEvent = Pick<
+  Task,
+  "task_id" | "state" | "error" | "updated_at"
+>;
 interface API {
+  DiagnoseDevice(id: string, manifest: string): Promise<NetworkReport>;
+  StopDiagnostic(): Promise<void>;
+  Activity(): Promise<TaskEvent[]>;
   PickFolder(): Promise<string>;
   StartUpload(
     device: string,

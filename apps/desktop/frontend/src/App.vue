@@ -1,8 +1,38 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
-import { backend, type Device, type Task } from "./bridge";
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import { backend, type Device, type Task, type TaskEvent } from "./bridge";
 import UploadPanel from "./components/UploadPanel.vue";
+import DiagnosticPanel from "./components/DiagnosticPanel.vue";
+import Icon from "./components/Icon.vue";
 const transferMode = ref("download");
+const theme = ref(
+  localStorage.getItem("hopsend-theme") === "dark" ? "dark" : "light",
+);
+function toggleTheme() {
+  theme.value = theme.value === "light" ? "dark" : "light";
+}
+watch(
+  theme,
+  (value) => {
+    document.documentElement.dataset.theme = value;
+    localStorage.setItem("hopsend-theme", value);
+  },
+  { immediate: true },
+);
+const taskFilter = ref("all");
+const history = ref<TaskEvent[]>([]);
+const titles: Record<string, string> = {
+  tasks: "传输任务",
+  devices: "设备与信任",
+  diagnostics: "网络诊断",
+  logs: "活动记录",
+};
+const descriptions: Record<string, string> = {
+  tasks: "让文件跨越设备，让每次传输都可靠。",
+  devices: "管理已配对设备，连接前核对远端身份。",
+  diagnostics: "从网络到文件，逐层定位连接问题。",
+  logs: "查看任务状态变化，关闭后仍可追溯。",
+};
 const page = ref("tasks"),
   devices = ref<Device[]>([]),
   tasks = ref<Task[]>([]),
@@ -35,10 +65,46 @@ const active = computed(() =>
       "uploading",
       "rechecking",
       "verifying",
+      "publishing",
       "waiting_network",
     ].includes(t.state),
   ),
 );
+const visibleTasks = computed(() =>
+  tasks.value.filter(
+    (t) =>
+      taskFilter.value === "all" ||
+      (taskFilter.value === "active" &&
+        active.value.some((a) => a.id === t.id)) ||
+      (taskFilter.value === "completed" && t.state === "completed") ||
+      (taskFilter.value === "attention" &&
+        [
+          "failed",
+          "paused",
+          "recoverable",
+          "interrupted",
+          "waiting_network",
+        ].includes(t.state)),
+  ),
+);
+const totalSpeed = computed(() =>
+  active.value.reduce((sum, t) => sum + (t.speed_bytes_per_second || 0), 0),
+);
+const eta = (n: number) =>
+  !n
+    ? "等待估算"
+    : n < 60
+      ? `${Math.ceil(n)} 秒`
+      : n < 3600
+        ? `${Math.ceil(n / 60)} 分钟`
+        : `${(n / 3600).toFixed(1)} 小时`;
+watch(page, (value) => {
+  if (value === "logs")
+    void backend()
+      .Activity()
+      .then((v) => (history.value = v))
+      .catch((e) => (error.value = String(e)));
+});
 const completed = computed(
   () => tasks.value.filter((t) => t.state === "completed").length,
 );
@@ -62,7 +128,7 @@ const word = (s: string) => words[s] || s;
 const size = (n: number) => {
   if (!n) return "0 B";
   const u = ["B", "KiB", "MiB", "GiB", "TiB"];
-  const i = Math.min(4, Math.floor(Math.log(n) / Math.log(1024)));
+  const i = Math.max(0, Math.min(4, Math.floor(Math.log(n) / Math.log(1024))));
   return `${(n / 1024 ** i).toFixed(i ? 2 : 0)} ${u[i]}`;
 };
 const ratio = (t: Task) =>
@@ -174,7 +240,13 @@ async function control(t: Task, action: "pause" | "resume" | "cancel") {
 let timer: ReturnType<typeof setInterval> | undefined;
 onMounted(() => {
   void perform(load);
+  let ticks = 0;
   timer = setInterval(() => {
+    if (page.value === "logs" && ++ticks % 4 === 0)
+      void backend()
+        .Activity()
+        .then((v) => (history.value = v))
+        .catch((e) => (error.value = String(e)));
     void refresh().catch((e) => {
       error.value = String(e);
     });
@@ -194,55 +266,45 @@ onUnmounted(() => {
       </div>
       <div class="side-label">工作空间</div>
       <button :class="{ chosen: page === 'tasks' }" @click="page = 'tasks'">
-        <span>⇩</span>传输任务 <b>{{ tasks.length }}</b>
+        <Icon name="transfer" />传输任务 <b>{{ tasks.length }}</b>
       </button>
       <button :class="{ chosen: page === 'devices' }" @click="page = 'devices'">
-        <span>▣</span>设备与信任 <b>{{ devices.length }}</b>
+        <Icon name="device" />设备与信任 <b>{{ devices.length }}</b>
       </button>
       <button :class="{ chosen: page === 'logs' }" @click="page = 'logs'">
-        <span>≡</span>活动记录
+        <Icon name="activity" />活动记录
+      </button>
+      <button
+        :class="{ chosen: page === 'diagnostics' }"
+        @click="page = 'diagnostics'"
+      >
+        <Icon name="network" />网络诊断
       </button>
       <div class="side-bottom">
-        <span class="dot"></span>本地任务 · SQLite 持久化
+        <span class="dot"></span>任务保存在本机
         <p>可信设备之间的可靠传输</p>
-        <small>控制信息 HTTPS · 文件数据 SFTP</small>
+        <small>跃传 HopSend · 可信设备传输</small>
       </div>
     </aside>
     <main>
-      <header>
+      <header class="page-header">
         <div>
-          <div class="eyebrow">
-            HOPSEND /
-            {{
-              page === "tasks"
-                ? "TRANSFER"
-                : page === "devices"
-                  ? "DEVICES"
-                  : "ACTIVITY"
-            }}
-          </div>
-          <h1>
-            {{
-              page === "tasks"
-                ? "传输任务"
-                : page === "devices"
-                  ? "设备与信任"
-                  : "活动记录"
-            }}
-          </h1>
-          <p>
-            {{
-              page === "tasks"
-                ? "从源设备获取可信版本，逐块验证，安全落盘。"
-                : page === "devices"
-                  ? "连接信息与信任文件分别保存，始终验证远端身份。"
-                  : "当前桌面会话中的实际操作与结果。"
-            }}
-          </p>
+          <div class="eyebrow">HOPSEND / 工作空间</div>
+          <h1>{{ titles[page] }}</h1>
+          <p>{{ descriptions[page] }}</p>
         </div>
-        <button class="secondary" @click="importConfig" :disabled="busy">
-          导入配对配置
-        </button>
+        <div class="header-actions">
+          <button
+            class="icon-button"
+            @click="toggleTheme"
+            :aria-label="theme === 'light' ? '切换深色主题' : '切换浅色主题'"
+            :title="theme === 'light' ? '切换深色主题' : '切换浅色主题'"
+          >
+            <Icon :name="theme === 'light' ? 'moon' : 'sun'" /></button
+          ><button class="secondary" @click="importConfig" :disabled="busy">
+            <Icon name="plus" />导入配对配置
+          </button>
+        </div>
       </header>
       <div v-if="error" class="message error" role="alert">{{ error }}</div>
       <div v-else-if="notice" class="message" role="status">{{ notice }}</div>
@@ -257,29 +319,31 @@ onUnmounted(() => {
             ><strong>{{ completed }} <span>项</span></strong>
           </div>
           <div>
-            <label>已保存设备</label
-            ><strong>{{ devices.length }} <span>台</span></strong>
+            <label>当前传输速度</label
+            ><strong class="speed-stat"
+              >{{ size(totalSpeed) }}<span>/ 秒</span></strong
+            >
           </div>
           <div class="reliable">
-            <span>✓</span>
+            <Icon name="shield" />
             <section>
-              每一块都有校验<small>中断后重核验，继续原版本</small>
+              每一块，完整抵达<small>完整性校验 · 中断可继续</small>
             </section>
           </div>
         </div>
         <div class="section-title">
-          <div>
+          <div class="transfer-switch">
             <button
-              :class="transferMode === 'download' ? 'primary' : 'secondary'"
+              :class="{ selected: transferMode === 'download' }"
               @click="transferMode = 'download'"
             >
-              从设备下载
+              <Icon name="download" />从设备下载
             </button>
             <button
-              :class="transferMode === 'upload' ? 'primary' : 'secondary'"
+              :class="{ selected: transferMode === 'upload' }"
               @click="transferMode = 'upload'"
             >
-              上传到设备
+              <Icon name="upload" />上传到设备
             </button>
           </div>
           <span>上传以接收端校验和发布结果为准</span>
@@ -334,7 +398,7 @@ onUnmounted(() => {
               @click="start"
               :disabled="busy || !selected || !manifest || !destination"
             >
-              开始下载 <span>↗</span>
+              开始下载 <Icon name="arrow" />
             </button>
           </div>
         </section>
@@ -352,8 +416,30 @@ onUnmounted(() => {
           <p>添加一台可信设备，填写清单 ID，开始第一次下载。</p>
           <button class="secondary" @click="edit()">添加设备</button>
         </div>
-        <article v-for="t in tasks" :key="t.id" class="task panel">
-          <div class="file-icon">▤</div>
+        <div v-if="tasks.length" class="filters" aria-label="任务筛选">
+          <button
+            v-for="f in [
+              { id: 'all', name: '全部' },
+              { id: 'active', name: '传输中' },
+              { id: 'completed', name: '已完成' },
+              { id: 'attention', name: '待处理' },
+            ]"
+            :key="f.id"
+            :class="{ selected: taskFilter === f.id }"
+            @click="taskFilter = f.id"
+          >
+            {{ f.name }}
+          </button>
+        </div>
+        <div v-if="tasks.length && !visibleTasks.length" class="panel empty">
+          <Icon name="file" />
+          <h3>当前分类没有任务</h3>
+          <p>切换分类可查看其他任务。</p>
+        </div>
+        <article v-for="t in visibleTasks" :key="t.id" class="task panel">
+          <div class="file-icon">
+            <Icon :name="t.direction === 'upload' ? 'upload' : 'download'" />
+          </div>
           <div class="task-body">
             <div class="task-heading">
               <h3>{{ t.name }}</h3>
@@ -366,12 +452,35 @@ onUnmounted(() => {
             <p class="destination" :title="t.destination">
               {{ t.destination }}
             </p>
-            <div class="bar"><i :style="{ width: ratio(t) + '%' }"></i></div>
+            <div
+              class="bar"
+              role="progressbar"
+              :aria-label="t.name + '已校验进度'"
+              :aria-valuenow="Math.round(ratio(t))"
+              :aria-valuemin="0"
+              :aria-valuemax="100"
+            >
+              <i :style="{ width: ratio(t) + '%' }"></i>
+            </div>
             <div class="task-meta">
               <span
                 >{{ size(t.verified_bytes) }} / {{ size(t.total_bytes) }} ·
                 {{ t.completed_chunks }} 块已确认</span
               ><span>版本 {{ t.manifest_id.slice(0, 12) }}</span>
+            </div>
+            <div v-if="t.metrics_available" class="task-metrics">
+              <span
+                >传输速度<b
+                  >{{ size(t.speed_bytes_per_second || 0) }}/s</b
+                ></span
+              ><span
+                >预计剩余<b>{{
+                  t.state === "completed" ? "已完成" : eta(t.eta_seconds)
+                }}</b></span
+              ><span
+                title="本次启动或继续以来，经 SFTP 实际传递的数据；含重传，不含协议开销。不会增加上方已校验进度。"
+                >本次传输<b>{{ size(t.transferred_bytes || 0) }}</b></span
+              >
             </div>
             <p v-if="t.error" class="task-error">{{ t.error }}</p>
           </div>
@@ -430,7 +539,7 @@ onUnmounted(() => {
         </div>
         <div class="device-grid">
           <article v-for="d in devices" :key="d.id" class="panel device">
-            <div class="device-icon">▣</div>
+            <div class="device-icon"><Icon name="device" /></div>
             <h3>{{ d.name }}</h3>
             <p>{{ d.agent_url }}</p>
             <p>SSH {{ d.ssh_address }} · {{ d.ssh_user }}</p>
@@ -438,6 +547,8 @@ onUnmounted(() => {
             <footer>
               <button class="secondary" @click="check(d.id)" :disabled="busy">
                 检查连接</button
+              ><button class="text-button" @click="page = 'diagnostics'">
+                分层诊断</button
               ><button class="text-button" @click="edit(d)">编辑</button>
             </footer>
           </article>
@@ -501,10 +612,26 @@ onUnmounted(() => {
           </footer>
         </section>
       </template>
+      <div v-show="page === 'diagnostics'">
+        <DiagnosticPanel :devices="devices" />
+      </div>
       <section v-if="page === 'logs'" class="panel logs">
         <div class="section-title">
-          <h2>本次会话</h2>
-          <span>仅展示实际操作</span>
+          <h2>任务状态记录</h2>
+          <span>本机持久保存 · 最近 200 条</span>
+        </div>
+        <p v-if="!history.length" class="muted">尚无已记录的任务状态变化。</p>
+        <div v-for="(entry, i) in history" :key="'history' + i" class="log">
+          <time>{{ new Date(entry.updated_at).toLocaleString("zh-CN") }}</time
+          ><span :class="['badge', entry.state]">{{ word(entry.state) }}</span
+          ><span
+            ><small>任务 {{ entry.task_id.slice(0, 12) }}</small>
+            <p v-if="entry.error" class="task-error">{{ entry.error }}</p></span
+          >
+        </div>
+        <div class="section-title list-title">
+          <h2>本次操作</h2>
+          <span>当前桌面会话</span>
         </div>
         <p v-if="!entries.length" class="muted">暂无活动记录。</p>
         <div v-for="(entry, i) in entries" :key="i" class="log">
@@ -512,9 +639,7 @@ onUnmounted(() => {
           ><span>{{ entry.text }}</span>
         </div>
       </section>
-      <footer class="page-footer">
-        文件经 SFTP 传输 · HTTPS 提供清单与控制信息 · Tailscale 提供跨网络连接
-      </footer>
+      <footer class="page-footer">版本可信 · 分块续传 · 接收端确认</footer>
     </main>
   </div>
 </template>
