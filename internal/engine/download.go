@@ -16,6 +16,7 @@ import (
 
 	v1 "github.com/DVE-FCT/HopSend/contracts/manifest/v1"
 	"github.com/DVE-FCT/HopSend/internal/filesystem"
+	"github.com/DVE-FCT/HopSend/internal/folder"
 	"github.com/DVE-FCT/HopSend/internal/manifest"
 )
 
@@ -92,6 +93,9 @@ func Download(parent context.Context, opts DownloadOptions) (result DownloadResu
 	if err != nil {
 		return result, err
 	}
+	if err = filesystem.CheckComponents(destination); err != nil {
+		return result, err
+	}
 	if err = os.MkdirAll(filepath.Dir(destination), 0700); err != nil {
 		return result, err
 	}
@@ -141,6 +145,24 @@ func Download(parent context.Context, opts DownloadOptions) (result DownloadResu
 		}
 	}()
 	if info, statErr := os.Lstat(destination); statErr == nil {
+		if opts.Manifest.PayloadKind == "folder" {
+			if opts.Journal == nil || (task.State != "publishing" && task.State != "completed") || !info.IsDir() || filesystem.IsReparse(info) {
+				return result, errors.New("目标文件夹已存在，拒绝覆盖")
+			}
+			if _, e := os.Lstat(staging + ".folder"); !os.IsNotExist(e) {
+				return result, errors.New("展开暂存与正式目录同时存在，拒绝冒认外部目录")
+			}
+			if err = folder.VerifyContent(parent, staging, destination, opts.Manifest.ContentID); err != nil {
+				return result, err
+			}
+			if err = setState("completed"); err != nil {
+				return result, err
+			}
+			if opts.OnProgress != nil {
+				opts.OnProgress(Progress{TaskID: task.ID, State: "completed", TotalBytes: opts.Manifest.SizeBytes, VerifiedBytes: opts.Manifest.SizeBytes, CompletedChunks: len(opts.Manifest.Chunks)})
+			}
+			return DownloadResult{TaskID: task.ID, ManifestID: opts.Manifest.ManifestID, Path: destination, Bytes: opts.Manifest.SizeBytes, SHA256: opts.Manifest.ContentID, Chunks: len(opts.Manifest.Chunks), ReusedChunks: len(opts.Manifest.Chunks)}, nil
+		}
 		// Only a recorded publication can be reconciled. A same-name file during
 		// downloading remains a conflict, even if its bytes happen to match.
 		if opts.Journal == nil || (task.State != "publishing" && task.State != "completed") || !info.Mode().IsRegular() || info.Size() != opts.Manifest.SizeBytes {
@@ -190,6 +212,19 @@ func Download(parent context.Context, opts DownloadOptions) (result DownloadResu
 		return result, fmt.Errorf("创建唯一暂存文件: %w", err)
 	}
 	defer file.Close()
+	if flags&os.O_EXCL != 0 {
+		needed := uint64(opts.Manifest.SizeBytes)
+		if opts.Manifest.PayloadKind == "folder" {
+			needed *= 2
+		}
+		available, e := filesystem.AvailableBytes(filepath.Dir(staging))
+		if e != nil {
+			return result, e
+		}
+		if available < needed {
+			return result, errors.New("目标磁盘可用空间不足（需保存暂存及目录展开内容）")
+		}
+	}
 	ctx, cancel := context.WithCancelCause(parent)
 	defer cancel(nil)
 	progress := Progress{TaskID: task.ID, State: "rechecking", TotalBytes: opts.Manifest.SizeBytes}
@@ -327,7 +362,12 @@ func Download(parent context.Context, opts DownloadOptions) (result DownloadResu
 	if err = boundary("publishing", -1); err != nil {
 		return result, err
 	}
-	if err = filesystem.PublishNoReplace(staging, destination); err != nil {
+	if opts.Manifest.PayloadKind == "folder" {
+		err = folder.Publish(ctx, staging, destination)
+	} else {
+		err = filesystem.PublishNoReplace(staging, destination)
+	}
+	if err != nil {
 		return result, fmt.Errorf("发布文件失败，目标可能已被创建: %w", err)
 	}
 	if err = boundary("renamed", -1); err != nil {
