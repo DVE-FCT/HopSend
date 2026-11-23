@@ -18,6 +18,12 @@ export interface PreparationReport {
   observed_at: string;
   steps: { name: string; state: string; detail: string }[];
 }
+export interface DeviceObservation {
+  reachable: boolean;
+  observed_at: string;
+  detail: string;
+  agent_version?: string;
+}
 export interface Task {
   direction: string;
   id: string;
@@ -52,6 +58,9 @@ export type TaskEvent = Pick<
   "task_id" | "state" | "error" | "updated_at"
 >;
 interface API {
+  RevealTask(id: string): Promise<void>;
+  ObserveDevice(id: string): Promise<DeviceObservation>;
+  ApplicationInfo(): Promise<{ version: string }>;
   PrepareDevice(id: string): Promise<PreparationReport>;
   DiagnoseDevice(id: string, manifest: string): Promise<NetworkReport>;
   StopDiagnostic(): Promise<void>;
@@ -83,6 +92,13 @@ interface API {
 declare global {
   interface Window {
     go?: { main: { App: API } };
+    runtime?: {
+      OnFileDrop(
+        callback: (x: number, y: number, paths: string[]) => void,
+        useDropTarget: boolean,
+      ): void;
+      OnFileDropOff(): void;
+    };
   }
 }
 export function backend(): API {
