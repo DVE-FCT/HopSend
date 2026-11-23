@@ -19,6 +19,7 @@ import (
 
 	v1 "github.com/DVE-FCT/HopSend/contracts/control/v1"
 	"github.com/DVE-FCT/HopSend/internal/filesystem"
+	"github.com/DVE-FCT/HopSend/internal/folder"
 	"github.com/DVE-FCT/HopSend/internal/manifest"
 	"github.com/DVE-FCT/HopSend/internal/storage/sqlite"
 )
@@ -141,7 +142,11 @@ func (s *Server) createUpload(w http.ResponseWriter, r *http.Request, p *princip
 		return
 	}
 	available, err := filesystem.AvailableBytes(root.Name())
-	if err != nil || available < uint64(request.Manifest.SizeBytes) {
+	needed := uint64(request.Manifest.SizeBytes)
+	if request.Manifest.PayloadKind == "folder" {
+		needed *= 2
+	}
+	if err != nil || available < needed {
 		fail(w, 507, "insufficient_storage", "接收端可用空间不足或无法确认容量")
 		return
 	}
@@ -202,6 +207,22 @@ func (s *Server) reconcilePublished(ctx context.Context, r sqlite.UploadRecord, 
 	info, err := root.Lstat(r.Target)
 	if os.IsNotExist(err) && r.State == "publishing" {
 		return r, false, nil
+	}
+	if r.Manifest.PayloadKind == "folder" {
+		if err != nil || !info.IsDir() || filesystem.IsReparse(info) {
+			return r, false, errors.New("接收端正式目录不可用或类型改变")
+		}
+		if _, e := root.Lstat(r.Staging + ".folder"); !os.IsNotExist(e) {
+			return r, false, errors.New("正式与展开暂存目录同时存在，不能冒认")
+		}
+		if err = folder.VerifyContent(ctx, filepath.Join(root.Name(), r.Staging), filepath.Join(root.Name(), r.Target), r.Manifest.ContentID); err != nil {
+			return r, false, err
+		}
+		if err = s.uploadStore.SetUploadState(ctx, r.ID, "completed"); err != nil {
+			return r, false, err
+		}
+		r.State, r.SHA256 = "completed", r.Manifest.ContentID
+		return r, true, nil
 	}
 	if err != nil || !info.Mode().IsRegular() || info.Size() != r.Manifest.SizeBytes {
 		return r, false, errors.New("接收端正式文件缺失、变化或类型错误")
@@ -327,6 +348,16 @@ func (s *Server) finalizeUpload(ctx context.Context, r sqlite.UploadRecord, root
 	}
 	if err = s.uploadStore.SetUploadState(ctx, r.ID, "publishing"); err != nil {
 		return r, err
+	}
+	if r.Manifest.PayloadKind == "folder" {
+		if err = folder.Publish(ctx, filepath.Join(root.Name(), r.Staging), filepath.Join(root.Name(), r.Target)); err != nil {
+			return r, err
+		}
+		if err = s.uploadStore.SetUploadState(ctx, r.ID, "completed"); err != nil {
+			return r, err
+		}
+		r.State, r.SHA256 = "completed", digest
+		return r, nil
 	}
 	// Root.Link atomically refuses an existing target and confines resolution to
 	// the authorized share even if a directory entry is replaced concurrently.

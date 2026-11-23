@@ -35,6 +35,9 @@ func ID(m v1.Manifest) string {
 }
 
 func Validate(m v1.Manifest) error {
+	if m.PayloadKind != "" && m.PayloadKind != "folder" {
+		return errors.New("清单内容类型不受支持")
+	}
 	if m.SchemaVersion != 1 || !ValidID(m.ManifestID) || !ValidID(m.ContentID) || !sharePattern.MatchString(m.ShareID) {
 		return errors.New("清单版本或内容标识无效")
 	}

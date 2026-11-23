@@ -29,7 +29,7 @@ func runPublish(ctx context.Context, args []string, out, stderr io.Writer) int {
 	if f.NArg() != 0 || *source == "" || *store == "" || *chunk < 1 || *chunk > 64 {
 		return 2
 	}
-	m, err := manifest.Publish(ctx, *source, *store, *share, *chunk<<20)
+	m, err := app.Publish(ctx, *source, *store, *share, *chunk<<20)
 	if err != nil {
 		fmt.Fprintln(stderr, "发布内容失败:", err)
 		return 1

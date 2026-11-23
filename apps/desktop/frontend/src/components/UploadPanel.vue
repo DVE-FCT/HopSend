@@ -40,6 +40,14 @@ async function start() {
     preparing.value = false;
   }
 }
+async function chooseFolder() {
+  try {
+    const path = await backend().PickFolder();
+    if (path) source.value = path;
+  } catch (e) {
+    error.value = String(e);
+  }
+}
 </script>
 <template>
   <section class="panel create">
@@ -70,7 +78,8 @@ async function start() {
           v-model="source"
           aria-label="本机源文件"
           placeholder="选择要发送的文件"
-        /><button @click="choose" :disabled="busy">选择上传文件</button>
+        /><button @click="choose" :disabled="busy">选择文件</button
+        ><button @click="chooseFolder" :disabled="busy">选择文件夹</button>
       </div></label
     >
     <label style="margin-top: 14px"

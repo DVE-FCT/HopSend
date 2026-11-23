@@ -15,6 +15,7 @@ import (
 
 	v1 "github.com/DVE-FCT/HopSend/contracts/manifest/v1"
 	"github.com/DVE-FCT/HopSend/internal/engine"
+	"github.com/DVE-FCT/HopSend/internal/folder"
 	"github.com/DVE-FCT/HopSend/internal/manifest"
 	"github.com/DVE-FCT/HopSend/internal/storage/sqlite"
 )
@@ -22,6 +23,45 @@ import (
 type diskSource struct {
 	root   string
 	onRead func(int64)
+}
+
+func TestFolderPublicationProcessExitReconcilesVerifiedDirectory(t *testing.T) {
+	for _, point := range []string{"publishing", "renamed", "completed"} {
+		t.Run(point, func(t *testing.T) {
+			root := t.TempDir()
+			source := filepath.Join(root, "source-folder")
+			if err := os.MkdirAll(filepath.Join(source, "中文", "空目录"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(source, "payload.bin"), bytes.Repeat([]byte("folder process recovery"), 14000), 0600); err != nil {
+				t.Fatal(err)
+			}
+			archive := filepath.Join(root, "source.bin")
+			if _, err := folder.Create(context.Background(), source, archive); err != nil {
+				t.Fatal(err)
+			}
+			content := filepath.Join(root, "content")
+			m, err := manifest.Publish(context.Background(), archive, content, "files", manifest.MinChunkSize, "folder")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.Chmod(filepath.Join(content, "objects", m.ContentID), 0600) })
+			b, _ := json.Marshal(m)
+			if err = os.WriteFile(filepath.Join(root, "manifest.json"), b, 0600); err != nil {
+				t.Fatal(err)
+			}
+			crash(t, root, point)
+			opts, db := recoveryOptions(t, root)
+			defer db.Close()
+			result, err := engine.Download(context.Background(), opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = folder.VerifyContent(context.Background(), archive, result.Path, m.ContentID); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
 }
 
 type rejectConfirmation struct{ engine.Journal }

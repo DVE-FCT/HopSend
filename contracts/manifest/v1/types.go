@@ -9,6 +9,7 @@ type Chunk struct {
 }
 
 type Manifest struct {
+	PayloadKind    string  `json:"payload_kind,omitempty"`
 	SchemaVersion  int     `json:"schema_version"`
 	ManifestID     string  `json:"manifest_id"`
 	ContentID      string  `json:"content_id"`

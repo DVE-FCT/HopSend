@@ -906,6 +906,9 @@
                 }
               }
             }
+          },
+          "payload_kind": {
+            "const": "folder"
           }
         }
       },

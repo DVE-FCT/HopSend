@@ -17,8 +17,11 @@ import (
 
 // Publish copies a regular source into a content-addressed snapshot. The source
 // is never hard-linked, so later source edits cannot alter published bytes.
-func Publish(ctx context.Context, source, store, share string, chunkSize int64) (v1.Manifest, error) {
+func Publish(ctx context.Context, source, store, share string, chunkSize int64, payload ...string) (v1.Manifest, error) {
 	var m v1.Manifest
+	if len(payload) > 1 || (len(payload) == 1 && payload[0] != "folder") {
+		return m, errors.New("发布内容类型无效")
+	}
 	if chunkSize < MinChunkSize || chunkSize > MaxChunkSize || !sharePattern.MatchString(share) {
 		return m, errors.New("发布分块或共享参数无效")
 	}
@@ -60,6 +63,9 @@ func Publish(ctx context.Context, source, store, share string, chunkSize int64) 
 	staging := output.Name()
 	defer func() { output.Close(); os.Chmod(staging, 0600); os.Remove(staging) }()
 	m = v1.Manifest{SchemaVersion: 1, ShareID: share, Name: name, SizeBytes: before.Size(), ChunkSizeBytes: chunkSize, Chunks: make([]v1.Chunk, 0, count)}
+	if len(payload) == 1 {
+		m.PayloadKind = payload[0]
+	}
 	whole := sha256.New()
 	buffer := make([]byte, 1<<20)
 	for offset := int64(0); offset < m.SizeBytes; {
