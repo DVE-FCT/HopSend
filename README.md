@@ -10,6 +10,8 @@ P2.6 优化主题、任务反馈、设备观察与编辑抽屉、日志跳转和
 
 P2.9 为 Agent 和 CLI 补充目录分页：默认 100、最大 500 项/页，CLI `agent-status --share files --all` 可自动遍历。分页期间检测到目录变化会提示重新读取，支持超过 1000 项的目录；协议、使用方法和限制见 [目录分页验收](docs/validation/P2.9-directory-pagination.md)及 [ADR 0010](docs/adr/0010-directory-pagination.md)。本阶段未新增桌面目录浏览界面。
 
+P2.10 将发送端配对资料业务迁入 Go：新增 `pair request/inspect/import`，原生生成 SSH 密钥、校验回应并固定本地信任；使用方法见 [Go 配对资料核心](docs/21-native-pairing-materials.md)。接收端部署和在线桌面预览仍按 P2.8 单独验收。
+
 ## 名称与输出
 
 | 项目 | 约定 |
