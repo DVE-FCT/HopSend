@@ -37,3 +37,12 @@ test('health probes are bounded, coalesced, throttled after failure, and stop cl
  assert.equal(states.filter(s=>s.loading).length,5);
  assert.equal(states.filter(s=>!s.loading).length,3);
 });
+
+test('a trust change discards old in-flight observations for the same device ID',async()=>{
+ const states=[];let release;
+ const monitor=createHealthMonitor(()=>['same-id'],async()=>{await new Promise(resolve=>release=resolve);return {reachable:true,detail:'old trust'};},(id,state)=>states.push(state));
+ const old=monitor.refresh();monitor.invalidate();release();await old;
+ assert.equal(states.filter(state=>!state.loading).length,0);
+ const current=monitor.refresh();release();await current;
+ assert.equal(states.filter(state=>!state.loading).length,1);
+});

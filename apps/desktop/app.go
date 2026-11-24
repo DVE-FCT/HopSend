@@ -138,6 +138,12 @@ func (a *App) Devices() ([]Device, error) {
 	return append([]Device{}, a.devices...), nil
 }
 func (a *App) SaveDevice(d Device) (Device, error) {
+	return a.saveDevice(d, nil)
+}
+
+// expected makes trust publication a compare-and-swap: an edit made while
+// materials were validated cannot be silently replaced by the new version.
+func (a *App) saveDevice(d Device, expected *Device) (Device, error) {
 	if err := a.Ready(); err != nil {
 		return d, err
 	}
@@ -160,12 +166,18 @@ func (a *App) SaveDevice(d Device) (Device, error) {
 	found := false
 	for i := range devices {
 		if devices[i].ID == d.ID {
+			if expected != nil && devices[i] != *expected {
+				return d, errors.New("设备设置在操作期间发生变化，请重新检视后重试")
+			}
 			devices[i] = d
 			found = true
 			break
 		}
 	}
 	if !found {
+		if expected != nil && expected.ID != "" {
+			return d, errors.New("设备记录已变化，未切换信任资料")
+		}
 		devices = append(devices, d)
 	}
 	b, err := json.MarshalIndent(devices, "", "  ")

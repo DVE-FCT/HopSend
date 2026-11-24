@@ -46,23 +46,25 @@ export function createHealthMonitor(
 ) {
   const attempted = new Map<string, number>();
   let running = false, stopped = false;
+  let generation = 0;
   return {
     async refresh(force = false) {
       if (running || stopped) return;
       running = true;
+      const startedGeneration = generation;
       try {
         const current = ids();
         for (const id of attempted.keys()) if (!current.includes(id)) attempted.delete(id);
         const queue = current.filter(id => force || !attempted.has(id) || now() - attempted.get(id)! >= 30_000);
         await Promise.all([0, 1].map(async () => {
-          for (let id = queue.shift(); id && !stopped; id = queue.shift()) {
+          for (let id = queue.shift(); id && !stopped && generation === startedGeneration; id = queue.shift()) {
             attempted.set(id, now());
             update(id, {loading: true});
             try {
               const result = await observe(id);
-              if (!stopped && ids().includes(id)) update(id, {loading: false, result});
+              if (!stopped && generation === startedGeneration && ids().includes(id)) update(id, {loading: false, result});
             } catch (error) {
-              if (!stopped && ids().includes(id)) update(id, {loading: false, error: String(error)});
+              if (!stopped && generation === startedGeneration && ids().includes(id)) update(id, {loading: false, error: String(error)});
             }
           }
         }));
@@ -70,6 +72,7 @@ export function createHealthMonitor(
         running = false;
       }
     },
+    invalidate() {generation++;attempted.clear();},
     stop() {stopped = true;},
   };
 }

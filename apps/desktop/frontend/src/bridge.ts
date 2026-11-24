@@ -65,6 +65,7 @@ interface API {
   PairCreateRequest(sourceIP:string,name:string): Promise<PairRequestResult>;
   PairInspectReply(path:string): Promise<PairInspectResult>;
   PairImportReply(path:string,expectedSSH:string,expectedCA:string): Promise<string>;
+  RotateDeviceTrust(id:string,path:string,expectedSSH:string,expectedCA:string): Promise<Device>;
 
   RevealTask(id: string): Promise<void>;
   ObserveDevice(id: string): Promise<DeviceObservation>;

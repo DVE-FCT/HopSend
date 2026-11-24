@@ -25,6 +25,7 @@ import {createHealthMonitor,type PairCompletion} from "./pairing-lifecycle";
 const transferMode = ref("download");
 const uploadPanel=ref<InstanceType<typeof UploadPanel>>();
 const pairingOpen=ref(false),droppedPackage=ref("");
+const rotatingDevice=ref<Device>();
 const diagnosticDevice=ref(''),diagnosticSequence=ref(0),connectionFailure=ref('');
 const packageDropSequence=ref(0);
 let nativeDropRegistered=false;
@@ -178,9 +179,12 @@ const healthMonitor=createHealthMonitor(
 async function observeDevices(force = false) {
   await healthMonitor.refresh(force);
 }
+function invalidateObservations(){healthMonitor.invalidate();for(const id of Object.keys(observations))delete observations[id];}
+function rotateTrust(device:Device){rotatingDevice.value=device;droppedPackage.value='';pairingOpen.value=true;page.value='devices';}
+function togglePairing(){if(rotatingDevice.value){rotatingDevice.value=undefined;pairingOpen.value=true;}else pairingOpen.value=!pairingOpen.value;}
 function diagnose(id:string){diagnosticDevice.value=id;diagnosticSequence.value++;page.value='diagnostics';}
 async function paired(result:PairCompletion){
-  devices.value=await backend().Devices();selected.value=result.device.id;pairingOpen.value=false;
+  invalidateObservations();devices.value=await backend().Devices();selected.value=result.device.id;pairingOpen.value=false;rotatingDevice.value=undefined;
   connectionFailure.value=result.connected?'':result.device.id;
   notice.value=result.message;page.value='devices';void observeDevices(true);
 }
@@ -323,7 +327,7 @@ async function importConfig() {
 async function save() {
   await perform(async () => {
     const d = await backend().SaveDevice({ ...form });
-    delete observations[d.id];
+    invalidateObservations();
     selected.value = d.id;
     showEditor.value = false;
     await load();
@@ -779,8 +783,8 @@ onUnmounted(() => {
         </article>
       </template>
       <template v-if="page === 'devices'">
-        <button class="secondary" @click="pairingOpen=!pairingOpen">{{pairingOpen?'收起配对向导':'配对新设备'}}</button>
-        <PairingWizard v-if="pairingOpen||!devices.length" class="panel" :devices="devices" :dropped-path="droppedPackage" :drop-sequence="packageDropSequence" @legacy="importConfig" @paired="paired" />
+        <button class="secondary" @click="togglePairing">{{rotatingDevice?'返回首次配对':pairingOpen?'收起配对向导':'配对新设备'}}</button>
+        <PairingWizard v-if="pairingOpen||!devices.length" :key="rotatingDevice?.id||'new'" class="panel" :devices="devices" :rotation-device="rotatingDevice" :dropped-path="droppedPackage" :drop-sequence="packageDropSequence" @legacy="importConfig" @paired="paired" />
         <div v-if="connectionFailure" class="message error" role="alert">设备资料已保留，连接验收未通过。<button class="text-button" @click="diagnose(connectionFailure)">诊断此设备</button></div>
         <div class="section-title">
           <h2>可信源设备</h2>
@@ -877,6 +881,8 @@ onUnmounted(() => {
                 分层诊断</button
               ><button class="text-button" @click="edit(d)" :disabled="busy">
                 编辑
+              </button><button class="text-button" @click="rotateTrust(d)" :disabled="busy">
+                轮换信任
               </button>
             </footer>
           </article>
