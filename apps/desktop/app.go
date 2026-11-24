@@ -65,6 +65,9 @@ type App struct {
 	pending             map[string]TaskView
 	startupError        string
 	diagnosticCancel    context.CancelFunc
+	packageReviews      map[string]packageReview
+	packageImporting    bool
+	pairReadLocal       func(context.Context) ([]byte, error)
 }
 
 func NewApp() *App { return &App{} }
@@ -169,10 +172,7 @@ func (a *App) SaveDevice(d Device) (Device, error) {
 		return d, err
 	}
 	path := filepath.Join(a.directory, "devices.json")
-	if err = os.WriteFile(path+".tmp", b, 0600); err != nil {
-		return d, err
-	}
-	if err = os.Rename(path+".tmp", path); err != nil {
+	if err = writeDeviceSnapshot(path, b); err != nil {
 		return d, err
 	}
 	a.devices = devices

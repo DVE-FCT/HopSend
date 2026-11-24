@@ -77,3 +77,12 @@ func TestWindowsPrivateReplyCache(t *testing.T) {
 	}
 	assertPrivateACL(t, file)
 }
+
+func TestWindowsExportedPairPackageACL(t *testing.T) {
+	f := fixture(t)
+	file := filepath.Join(t.TempDir(), "private.hopsend-pair")
+	if _, err := ExportPackage(t.Context(), f.data(t), f.expected, file); err != nil {
+		t.Fatal(err)
+	}
+	assertPrivateACL(t, file)
+}

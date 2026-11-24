@@ -19,7 +19,13 @@ import {
 import UploadPanel from "./components/UploadPanel.vue";
 import DiagnosticPanel from "./components/DiagnosticPanel.vue";
 import Icon from "./components/Icon.vue";
+import PairingWizard from "./components/PairingWizard.vue";
+import {classifyDroppedFiles} from "./package-flow";
 const transferMode = ref("download");
+const uploadPanel=ref<InstanceType<typeof UploadPanel>>();
+const pairingOpen=ref(false),droppedPackage=ref("");
+const packageDropSequence=ref(0);
+let nativeDropRegistered=false;
 const theme = ref(
   localStorage.getItem("hopsend-theme") === "dark" ? "dark" : "light",
 );
@@ -307,6 +313,14 @@ function edit(d?: Device) {
   showEditor.value = true;
   page.value = "devices";
 }
+function handleNativeDrop(paths:string[]) {
+ const kind=classifyDroppedFiles(paths,page.value==='tasks'&&transferMode.value==='upload');
+ if(kind==='package'){droppedPackage.value=paths[0]||'';packageDropSequence.value++;pairingOpen.value=true;page.value='devices';return;}
+ if(kind==='multiple-packages'){error.value='一次只导入一个配对包，不与上传内容混放。';return;}
+ if(kind==='upload'){uploadPanel.value?.selectDropped(paths);return;}
+ notice.value='配对包可直接拖入；普通文件请在上传页添加。';
+}
+async function importPackage(){await perform(async()=>{const path=await backend().PickPairPackage();if(path){droppedPackage.value=path;packageDropSequence.value++;pairingOpen.value=true;page.value='devices';}},'import');}
 async function importConfig() {
   await perform(async () => {
     const d = await backend().ImportDevice();
@@ -409,6 +423,7 @@ async function control(t: Task, action: "pause" | "resume" | "cancel") {
 }
 let timer: ReturnType<typeof setInterval> | undefined;
 onMounted(() => {
+  if(window.runtime){window.runtime.OnFileDrop((_x,_y,paths)=>handleNativeDrop(paths),false);nativeDropRegistered=true;}
   void perform(load);
   void backend()
     .ApplicationInfo()
@@ -428,6 +443,7 @@ onMounted(() => {
   }, 750);
 });
 onUnmounted(() => {
+  if(nativeDropRegistered)window.runtime?.OnFileDropOff();
   if (timer) clearInterval(timer);
   if (highlightTimer) clearTimeout(highlightTimer);
   if (showEditor.value) document.body.style.overflow = previousOverflow;
@@ -478,14 +494,14 @@ onUnmounted(() => {
             :title="theme === 'light' ? '切换深色主题' : '切换浅色主题'"
           >
             <Icon :name="theme === 'light' ? 'moon' : 'sun'" /></button
-          ><button class="secondary" @click="importConfig" :disabled="busy">
+          ><button class="secondary" @click="importPackage" :disabled="busy">
             <span
               v-if="operation === 'import'"
               class="spinner"
               aria-hidden="true"
             ></span>
             <Icon v-else name="plus" />{{
-              operation === "import" ? "正在导入…" : "导入配对配置"
+              operation === "import" ? "正在导入…" : "导入回应 / 配对包"
             }}
           </button>
         </div>
@@ -549,6 +565,7 @@ onUnmounted(() => {
           <span>上传以接收端校验和发布结果为准</span>
         </div>
         <UploadPanel
+          ref="uploadPanel"
           v-if="transferMode === 'upload'"
           :devices="devices"
           @started="
@@ -769,6 +786,8 @@ onUnmounted(() => {
         </article>
       </template>
       <template v-if="page === 'devices'">
+        <button class="secondary" @click="pairingOpen=!pairingOpen">{{pairingOpen?'收起配对向导':'配对新设备'}}</button>
+        <PairingWizard v-if="pairingOpen||!devices.length" class="panel" :devices="devices" :dropped-path="droppedPackage" :drop-sequence="packageDropSequence" @legacy="importConfig" @paired="async(device)=>{devices=await backend().Devices();selected=device.id;pairingOpen=false;notice='配对资料已保存，点击准备并验收完成连接检查。';}" />
         <div class="section-title">
           <h2>可信源设备</h2>
           <div class="header-actions">

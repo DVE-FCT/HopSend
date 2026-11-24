@@ -9,3 +9,5 @@
 - 导入检查本机原请求及私钥匹配，固定回应的三个材料，不替换已有信任；`connection.json` 只保存文件路径。导入成功仅表示本地信任资料固定，真实 HTTPS/SSH/SFTP 连接验收由 `device-prepare` 完成。
 
 Go DTO 见 `materials.go`；实际校验、密钥生成和原子导入位于 `internal/pairing/material`，CLI 入口是 `hopsend-cli pair request|inspect|import`。这些字段兼容原 P2.8 PowerShell 资料；新版对重复键、CA 内容和路径做更严格的检查。在线服务和接收端系统授权尚未由本阶段发布。
+
+P2.11 将同一 ZIP 定义为 `.hopsend-pair` 文件；`preview` 只检查结构，必须返回 `trust_verified=false`。正式导入核对独立 SSH/CA 指纹并绑定本机原请求；`device.json` 的 JSON 排版差异可接受，所有 DTO 字段、CA 和 Token 的信任内容不能改变。桌面桥接和实际步骤见 [四步配对说明](../../../docs/22-desktop-pairing-wizard.md)。

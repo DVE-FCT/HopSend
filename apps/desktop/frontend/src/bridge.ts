@@ -58,6 +58,14 @@ export type TaskEvent = Pick<
   "task_id" | "state" | "error" | "updated_at"
 >;
 interface API {
+  CreatePairRequest(existingDevice:string): Promise<{request_file:string;request:{request_id:string}}> ;
+  PickPairPackage(): Promise<string>;
+
+  PairLocalIdentity(): Promise<PairIdentity>;
+  PairCreateRequest(sourceIP:string,name:string): Promise<PairRequestResult>;
+  PairInspectReply(path:string): Promise<PairInspectResult>;
+  PairImportReply(path:string,expectedSSH:string,expectedCA:string): Promise<string>;
+
   RevealTask(id: string): Promise<void>;
   ObserveDevice(id: string): Promise<DeviceObservation>;
   ApplicationInfo(): Promise<{ version: string }>;
@@ -106,3 +114,7 @@ export function backend(): API {
     throw new Error("请在跃传 Windows 桌面程序中使用此功能。");
   return window.go.main.App;
 }
+
+export interface PairIdentity {source_ip:string;name:string}
+export interface PairRequestResult {request:{request_id:string;source_ip:string;public_key:string;name?:string};request_file:string;request_json:string}
+export interface PairInspectResult {device:{name:string;agent_url:string;ssh_address:string;ssh_user:string;share_id:string;request_id:string;host_fingerprint:string;ca_sha256:string};materials_verified:boolean;trust_verified:boolean;package_sha256:string}

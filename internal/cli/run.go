@@ -21,7 +21,7 @@ func writeJSON(out io.Writer, value any) error {
 
 func Run(ctx context.Context, args []string, out, stderr io.Writer) int {
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" {
-		fmt.Fprintln(out, "跃传 HopSend\n用法：hopsend-cli pair request|inspect|import [参数] | version | doctor [--strict] | benchmark [参数] | device-prepare [参数] | diagnose [参数] | sftp-read [参数] | agent-init [参数] | agent-status [参数] | publish [参数] | download [参数] | upload [参数] | tasks [--database 路径] | resume --task ID [--database 路径] | control --task ID [--database 路径]\nbenchmark 运行有界的单源实测；sftp-read 只诊断范围；download 可信下载；upload 等待接收端校验发布；resume 重核验并恢复原任务；control 在本进程内暂停、继续和取消。")
+		fmt.Fprintln(out, "跃传 HopSend\n用法：hopsend-cli pair request|inspect-request|preview|package|inspect|import [参数] | version | doctor [--strict] | benchmark [参数] | device-prepare [参数] | diagnose [参数] | sftp-read [参数] | agent-init [参数] | agent-status [参数] | publish [参数] | download [参数] | upload [参数] | tasks [--database 路径] | resume --task ID [--database 路径] | control --task ID [--database 路径]\nbenchmark 运行有界的单源实测；sftp-read 只诊断范围；download 可信下载；upload 等待接收端校验发布；resume 重核验并恢复原任务；control 在本进程内暂停、继续和取消。")
 		return 0
 	}
 	switch args[0] {

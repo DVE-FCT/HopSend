@@ -107,6 +107,23 @@ Compress-Archive -LiteralPath (Join-Path $Output 'ca.crt'),(Join-Path $Output 'c
 		t.Fatalf("legacy PowerShell producer failed: %v %s", err, output)
 	}
 	shared := []string{"--reply", replyPath, "--expected-ssh", fingerprint, "--expected-ca", caHash, "--request-id", request.Request.RequestID, "--receiver-ip", "100.64.0.2"}
+	requestInspection := run("pair", "inspect-request", "--request", request.File)
+	if bytes.Contains(requestInspection, []byte("PRIVATE KEY")) {
+		t.Fatal("request inspection leaked key")
+	}
+	untrusted := run("pair", "preview", "--reply", replyPath)
+	var preview struct {
+		TrustVerified bool   `json:"trust_verified"`
+		PackageSHA256 string `json:"package_sha256"`
+	}
+	if err := json.Unmarshal(untrusted, &preview); err != nil || preview.TrustVerified || len(preview.PackageSHA256) != 64 {
+		t.Fatal("preview established trust or omitted package digest", err)
+	}
+	packagePath := filepath.Join(dir, "source.hopsend-pair")
+	run(append(append([]string{"pair", "package"}, shared...), "--output", packagePath)...)
+	if _, err := os.Stat(packagePath); err != nil {
+		t.Fatal(err)
+	}
 	inspected := run(append([]string{"pair", "inspect"}, shared...)...)
 	if bytes.Contains(inspected, bytes.TrimSpace(token)) || bytes.Contains(inspected, []byte("PRIVATE KEY")) {
 		t.Fatal("inspection leaked a secret")
@@ -121,6 +138,15 @@ Compress-Archive -LiteralPath (Join-Path $Output 'ca.crt'),(Join-Path $Output 'c
 	args := append([]string{"pair", "import", "--trust-dir", trust}, shared...)
 	first := run(args...)
 	second := run(args...)
+	packageArgs := append([]string{}, args...)
+	for i, arg := range packageArgs {
+		if arg == replyPath {
+			packageArgs[i] = packagePath
+		}
+	}
+	if again := run(packageArgs...); !bytes.Equal(again, first) {
+		t.Fatal("package extension changed import binding")
+	}
 	if !bytes.Equal(first, second) || bytes.Contains(first, bytes.TrimSpace(token)) {
 		t.Fatal("CLI import retry changed result or exposed credentials")
 	}
