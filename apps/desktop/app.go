@@ -68,6 +68,7 @@ type App struct {
 	packageReviews      map[string]packageReview
 	packageImporting    bool
 	pairReadLocal       func(context.Context) ([]byte, error)
+	pairLocalAddresses  func() ([]string, error)
 }
 
 func NewApp() *App { return &App{} }

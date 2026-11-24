@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref, watchEffect } from "vue";
+import { ref, watch } from "vue";
 import { backend, type Device, type NetworkReport } from "../bridge";
 import Icon from "./Icon.vue";
 import { duration } from "../format";
-const props = defineProps<{ devices: Device[] }>();
+const props = defineProps<{ devices: Device[]; initialDevice?: string; selectionSequence?: number }>();
 const selected = ref(""),
   manifest = ref(""),
   busy = ref(false),
@@ -25,9 +25,17 @@ const states: Record<string, string> = {
   unknown: "待确认",
   skipped: "未执行",
 };
-watchEffect(() => {
-  if (!selected.value) selected.value = props.devices[0]?.id || "";
-});
+let appliedSelection = '';
+watch(() => [props.initialDevice, props.selectionSequence, props.devices, busy.value] as const, () => {
+  if (busy.value) return;
+  const selection = `${props.selectionSequence ?? 0}:${props.initialDevice || ''}`;
+  if (selection !== appliedSelection && props.initialDevice && props.devices.some(d => d.id === props.initialDevice)) {
+    selected.value = props.initialDevice;
+    appliedSelection = selection;
+  }
+  else if (!props.devices.some(d => d.id === selected.value)) selected.value = props.devices[0]?.id || '';
+}, {immediate: true});
+watch(selected, () => {report.value = undefined; error.value = ''; manifest.value = '';});
 async function run() {
   if (manifest.value && !/^[a-f0-9]{64}$/.test(manifest.value.trim())) {
     error.value = "清单 ID 需要 64 位小写十六进制字符。";
