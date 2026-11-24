@@ -21,9 +21,11 @@ import DiagnosticPanel from "./components/DiagnosticPanel.vue";
 import Icon from "./components/Icon.vue";
 import PairingWizard from "./components/PairingWizard.vue";
 import {classifyDroppedFiles} from "./package-flow";
+import {createHealthMonitor,type PairCompletion} from "./pairing-lifecycle";
 const transferMode = ref("download");
 const uploadPanel=ref<InstanceType<typeof UploadPanel>>();
 const pairingOpen=ref(false),droppedPackage=ref("");
+const diagnosticDevice=ref(''),diagnosticSequence=ref(0),connectionFailure=ref('');
 const packageDropSequence=ref(0);
 let nativeDropRegistered=false;
 const theme = ref(
@@ -168,34 +170,19 @@ watch(showEditor, async (open) => {
     document.body.style.overflow = previousOverflow;
   }
 });
-async function observeOne(id: string) {
-  if (observations[id]?.loading) return;
-  observations[id] = { ...observations[id], loading: true, error: undefined };
-  const pending = observations[id];
-  try {
-    const result = await backend().ObserveDevice(id);
-    if (observations[id] === pending)
-      observations[id] = { loading: false, result };
-  } catch (e) {
-    if (observations[id] === pending)
-      observations[id] = { loading: false, error: String(e) };
-  }
-}
+const healthMonitor=createHealthMonitor(
+  ()=>devices.value.map(d=>d.id),
+  id=>backend().ObserveDevice(id),
+  (id,state)=>{observations[id]=state.loading?{...observations[id],loading:true}:state;},
+);
 async function observeDevices(force = false) {
-  const queue = devices.value.filter((d) => {
-    const o = observations[d.id];
-    return (
-      !o?.loading &&
-      (force ||
-        !o?.result ||
-        Date.now() - Date.parse(o.result.observed_at) > 60_000)
-    );
-  });
-  await Promise.all(
-    [0, 1].map(async () => {
-      for (let d = queue.shift(); d; d = queue.shift()) await observeOne(d.id);
-    }),
-  );
+  await healthMonitor.refresh(force);
+}
+function diagnose(id:string){diagnosticDevice.value=id;diagnosticSequence.value++;page.value='diagnostics';}
+async function paired(result:PairCompletion){
+  devices.value=await backend().Devices();selected.value=result.device.id;pairingOpen.value=false;
+  connectionFailure.value=result.connected?'':result.device.id;
+  notice.value=result.message;page.value='devices';void observeDevices(true);
 }
 function observationLabel(id: string) {
   const o = observations[id];
@@ -272,7 +259,7 @@ function log(text: string) {
   entries.value.unshift({ time: new Date().toLocaleTimeString("zh-CN"), text });
   entries.value = entries.value.slice(0, 50);
 }
-async function perform(action: () => Promise<void>, name = "action") {
+async function perform(action: () => Promise<void>, name = "action", failureDevice = '') {
   if (busy.value) return;
   error.value = "";
   busy.value = true;
@@ -280,6 +267,7 @@ async function perform(action: () => Promise<void>, name = "action") {
   try {
     await action();
   } catch (e) {
+    if(failureDevice)connectionFailure.value=failureDevice;
     error.value = String(e);
     log(error.value);
     if (showEditor.value) {
@@ -350,7 +338,7 @@ async function save() {
         preparation.value = await backend().PrepareDevice(d.id);
         notice.value =
           "设备已就绪：环境、程序、HTTPS 认证与实际 SFTP 字节测试通过。";
-        void observeOne(d.id);
+        void observeDevices(true);
       } finally {
         preparing.value = "";
       }
@@ -370,6 +358,7 @@ async function pick(key: (typeof trustFields)[number][0], title: string) {
   });
 }
 async function check(id: string) {
+  connectionFailure.value='';
   await perform(async () => {
     const d = devices.value.find((d) => d.id === id);
     if (d?.manage_agent) {
@@ -378,7 +367,7 @@ async function check(id: string) {
       try {
         preparation.value = await backend().PrepareDevice(id);
         notice.value = "设备已就绪，传输前还会自动预检。";
-        void observeOne(id);
+        void observeDevices(true);
       } finally {
         preparing.value = "";
       }
@@ -387,8 +376,8 @@ async function check(id: string) {
     const r = await backend().CheckDevice(id);
     notice.value = r.message;
     log(`${r.message} · ${r.observed_at}`);
-    void observeOne(id);
-  }, `check:${id}`);
+    void observeDevices(true);
+  }, `check:${id}`, id);
 }
 async function pickDestination() {
   await perform(async () => {
@@ -422,6 +411,7 @@ async function control(t: Task, action: "pause" | "resume" | "cancel") {
   });
 }
 let timer: ReturnType<typeof setInterval> | undefined;
+let healthTimer: ReturnType<typeof setInterval> | undefined;
 onMounted(() => {
   if(window.runtime){window.runtime.OnFileDrop((_x,_y,paths)=>handleNativeDrop(paths),false);nativeDropRegistered=true;}
   void perform(load);
@@ -430,6 +420,7 @@ onMounted(() => {
     .then((info) => (version.value = info.version))
     .catch((e) => log(`读取版本失败：${e}`));
   let ticks = 0;
+  healthTimer=setInterval(()=>void observeDevices(true),30_000);
   timer = setInterval(() => {
     clock.value = Date.now();
     if (page.value === "logs" && ++ticks % 4 === 0)
@@ -443,6 +434,8 @@ onMounted(() => {
   }, 750);
 });
 onUnmounted(() => {
+  if(healthTimer)clearInterval(healthTimer);
+  healthMonitor.stop();
   if(nativeDropRegistered)window.runtime?.OnFileDropOff();
   if (timer) clearInterval(timer);
   if (highlightTimer) clearTimeout(highlightTimer);
@@ -787,7 +780,8 @@ onUnmounted(() => {
       </template>
       <template v-if="page === 'devices'">
         <button class="secondary" @click="pairingOpen=!pairingOpen">{{pairingOpen?'收起配对向导':'配对新设备'}}</button>
-        <PairingWizard v-if="pairingOpen||!devices.length" class="panel" :devices="devices" :dropped-path="droppedPackage" :drop-sequence="packageDropSequence" @legacy="importConfig" @paired="async(device)=>{devices=await backend().Devices();selected=device.id;pairingOpen=false;notice='配对资料已保存，点击准备并验收完成连接检查。';}" />
+        <PairingWizard v-if="pairingOpen||!devices.length" class="panel" :devices="devices" :dropped-path="droppedPackage" :drop-sequence="packageDropSequence" @legacy="importConfig" @paired="paired" />
+        <div v-if="connectionFailure" class="message error" role="alert">设备资料已保留，连接验收未通过。<button class="text-button" @click="diagnose(connectionFailure)">诊断此设备</button></div>
         <div class="section-title">
           <h2>可信源设备</h2>
           <div class="header-actions">
@@ -879,7 +873,7 @@ onUnmounted(() => {
                   aria-hidden="true"
                 ></span>
                 {{ d.manage_agent ? "准备并验收" : "检查连接" }}</button
-              ><button class="text-button" @click="page = 'diagnostics'">
+              ><button class="text-button" @click="diagnose(d.id)">
                 分层诊断</button
               ><button class="text-button" @click="edit(d)" :disabled="busy">
                 编辑
@@ -994,7 +988,7 @@ onUnmounted(() => {
         </dialog>
       </template>
       <div v-show="page === 'diagnostics'">
-        <DiagnosticPanel :devices="devices" />
+        <DiagnosticPanel :devices="devices" :initial-device="diagnosticDevice" :selection-sequence="diagnosticSequence" />
       </div>
       <section v-if="page === 'logs'" class="panel logs">
         <div class="section-title">

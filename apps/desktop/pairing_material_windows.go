@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -97,14 +98,66 @@ func (a *App) PairLocalIdentity() (PairIdentity, error) {
 	return parsePairIdentity(data)
 }
 
+// Manual input is a fallback for an unavailable per-user Tailscale CLI, never
+// permission to claim an arbitrary peer address as this machine's identity.
+func localTailscaleAddresses() ([]string, error) {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return nil, err
+	}
+	var result []string
+	for _, adapter := range interfaces {
+		if adapter.Flags&net.FlagUp == 0 || !strings.EqualFold(adapter.Name, "Tailscale") {
+			continue
+		}
+		addresses, err := adapter.Addrs()
+		if err != nil {
+			return nil, err
+		}
+		for _, address := range addresses {
+			ip, _, err := net.ParseCIDR(address.String())
+			if err == nil {
+				result = append(result, ip.String())
+			}
+		}
+	}
+	return result, nil
+}
+
+func (a *App) verifyPairSource(sourceIP string) error {
+	identity, err := a.PairLocalIdentity()
+	if err == nil {
+		if sourceIP != identity.SourceIP {
+			return errors.New("本机地址已变化，请重新读取并确认 Tailscale IP")
+		}
+		return nil
+	}
+	if readyErr := a.Ready(); readyErr != nil {
+		return readyErr
+	}
+	ip, parseErr := netip.ParseAddr(sourceIP)
+	if parseErr != nil || !ip.Is4() || ip.String() != sourceIP || !netip.MustParsePrefix("100.64.0.0/10").Contains(ip) {
+		return errors.New("请填写规范的本机 Tailscale IPv4")
+	}
+	read := a.pairLocalAddresses
+	if read == nil {
+		read = localTailscaleAddresses
+	}
+	addresses, readErr := read()
+	if readErr == nil {
+		for _, address := range addresses {
+			if address == sourceIP {
+				return nil
+			}
+		}
+	}
+	return errors.New("手动地址未出现在本机已启用的 Tailscale 网卡，请检查组网与账号权限后重试")
+}
+
 // PairCreateRequest keeps the SSH private key local and returns public data only.
 func (a *App) PairCreateRequest(sourceIP, name string) (PairRequestResult, error) {
-	identity, err := a.PairLocalIdentity()
-	if err != nil {
+	if err := a.verifyPairSource(sourceIP); err != nil {
 		return PairRequestResult{}, err
-	}
-	if sourceIP != identity.SourceIP {
-		return PairRequestResult{}, errors.New("本机地址已变化，请重新读取并确认 Tailscale IP")
 	}
 	trust, err := pairingTrustRoot()
 	if err != nil {
@@ -130,10 +183,6 @@ func (a *App) PickPairPackage() (string, error) {
 }
 
 func (a *App) CreatePairRequest(existingDevice string) (material.RequestResult, error) {
-	identity, err := a.PairLocalIdentity()
-	if err != nil {
-		return material.RequestResult{}, err
-	}
 	device, err := a.findDevice(existingDevice)
 	if err != nil {
 		return material.RequestResult{}, err
@@ -150,8 +199,8 @@ func (a *App) CreatePairRequest(existingDevice string) (material.RequestResult, 
 	if err != nil {
 		return material.RequestResult{}, err
 	}
-	if original.SourceIP != identity.SourceIP {
-		return material.RequestResult{}, errors.New("本机组网地址已变化，请创建新请求")
+	if err := a.verifyPairSource(original.SourceIP); err != nil {
+		return material.RequestResult{}, err
 	}
 	output, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{Title: "保存原公开请求"})
 	if err != nil || output == "" {

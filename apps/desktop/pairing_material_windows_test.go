@@ -11,6 +11,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -116,4 +117,36 @@ func TestDesktopPairingBridgeInspectsPinsImportsAndSaves(t *testing.T) {
 		t.Fatal("changed package accepted without a new review")
 	}
 	t.Log("desktop create -> inspect without trust -> explicit matching pins -> local import/save -> retry -> changed file rejection passed; live preparation remains separate")
+}
+
+func TestManualPairAddressRequiresLocalTailscaleAdapter(t *testing.T) {
+	local := t.TempDir()
+	t.Setenv("LOCALAPPDATA", local)
+	manager := app.NewManager(filepath.Join(local, "state.db"), nil)
+	t.Cleanup(func() { _ = manager.Close(context.Background()) })
+	a := &App{ctx: t.Context(), directory: local, manager: manager,
+		pairReadLocal:      func(context.Context) ([]byte, error) { return nil, errors.New("CLI unavailable") },
+		pairLocalAddresses: func() ([]string, error) { return []string{"100.64.0.1"}, nil },
+	}
+	for _, address := range []string{"100.64.0.2", "127.0.0.1", "100.064.0.1", "fd7a:115c:a1e0::1", ""} {
+		if _, err := a.PairCreateRequest(address, "客户端"); err == nil {
+			t.Fatal("claimed foreign or noncanonical address", address)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(local, "HopSend", "trust")); !os.IsNotExist(err) {
+		t.Fatal("invalid fallback created key material")
+	}
+	result, err := a.PairCreateRequest("100.64.0.1", "客户端")
+	if err != nil || result.Request.SourceIP != "100.64.0.1" {
+		t.Fatal(result, err)
+	}
+	a.pairReadLocal = func(context.Context) ([]byte, error) {
+		return []byte(`{"BackendState":"Running","Self":{"TailscaleIPs":["fd7a:115c:a1e0::1","100.64.0.2"]}}`), nil
+	}
+	if err := a.verifyPairSource("100.64.0.1"); err == nil {
+		t.Fatal("manual fallback overrode a readable authoritative status")
+	}
+	if err := a.verifyPairSource("100.64.0.2"); err != nil {
+		t.Fatal(err)
+	}
 }
