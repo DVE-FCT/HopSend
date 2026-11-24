@@ -25,7 +25,7 @@ POST /v1/uploads/{upload_id}/finalize
 
 前述路径混合当前接口与后续草案；以 contracts/control/v1/openapi.json 为实际接口依据。以 share_id/content_id/upload_id 访问受控对象，不接受任意绝对系统路径。
 
-实际实现 GET /v1/health、/v1/capabilities、/v1/shares、/v1/shares/{share_id}/entries?path=相对目录，以及 P1.1 的 /v1/shares/{share_id}/manifests/{manifest_id}；上传接口留待 P2.2。
+实际实现 GET /v1/health、/v1/capabilities、/v1/shares、/v1/shares/{share_id}/entries?path=相对目录，以及 P1.1 的 /v1/shares/{share_id}/manifests/{manifest_id}；目录接口支持 limit/cursor 分页，变化语义见 [ADR 0010](adr/0010-directory-pagination.md)；已实现的上传接口见 [接收端确认上传](14-confirmed-upload.md)。
 
 ## 3. Manifest 内容
 

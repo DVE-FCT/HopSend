@@ -1,14 +1,13 @@
 package httpapi
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"io"
-	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -30,6 +29,7 @@ type principal struct {
 	shares       map[string]bool
 	uploadShares map[string]bool
 }
+
 type Server struct {
 	HTTP           *http.Server
 	roots          map[string]*os.Root
@@ -39,6 +39,7 @@ type Server struct {
 	uploadStore    *sqlite.Store
 	uploadCreateMu sync.Mutex
 	uploadLocks    sync.Map
+	entryCursorKey [32]byte
 }
 
 func New(cfg Config) (*Server, error) {
@@ -49,6 +50,9 @@ func New(cfg Config) (*Server, error) {
 		return nil, errors.New("Agent TLS 证书或私钥不可用")
 	}
 	s := &Server{roots: make(map[string]*os.Root), writable: make(map[string]bool)}
+	if _, err := rand.Read(s.entryCursorKey[:]); err != nil {
+		return nil, errors.New("目录游标签名初始化失败")
+	}
 	ok := false
 	defer func() {
 		if !ok {
@@ -193,7 +197,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	case "/v1/health":
 		send(w, 200, v1.Health{Status: "ok", Service: "hopsend-agent", Version: buildinfo.Version, APIVersion: "v1"})
 	case "/v1/capabilities":
-		operations := []string{"health", "capabilities", "shares", "list_entries"}
+		operations := []string{"health", "capabilities", "shares", "list_entries", "list_entries_paginated"}
 		if s.contentRoot != nil {
 			operations = append(operations, "published_manifest")
 		}
@@ -258,65 +262,4 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		s.entries(w, r, id)
 	}
-}
-
-func (s *Server) entries(w http.ResponseWriter, r *http.Request, id string) {
-	path := r.URL.Query().Get("path")
-	if path == "" {
-		path = "."
-	}
-	if !fs.ValidPath(path) || strings.ContainsAny(path, `\:`) || strings.ContainsRune(path, 0) {
-		fail(w, 400, "invalid_path", "路径必须位于授权共享内")
-		return
-	}
-	root := s.roots[id]
-	// Refuse symlink/reparse traversal even inside the root; os.Root additionally
-	// constrains resolution if a component is concurrently replaced.
-	if path != "." {
-		prefix := ""
-		for _, component := range strings.Split(path, "/") {
-			if prefix != "" {
-				prefix += "/"
-			}
-			prefix += component
-			info, err := root.Lstat(prefix)
-			if err != nil || info.Mode()&os.ModeSymlink != 0 {
-				fail(w, 403, "path_denied", "路径不可访问")
-				return
-			}
-		}
-	}
-	file, err := root.Open(path)
-	if err != nil {
-		fail(w, 403, "path_denied", "路径不可访问")
-		return
-	}
-	defer file.Close()
-	items, err := file.ReadDir(1001)
-	if err != nil && err != io.EOF {
-		fail(w, 400, "not_directory", "目标不是可读取目录")
-		return
-	}
-	if len(items) > 1000 {
-		fail(w, 413, "directory_too_large", "目录超过首版单次 1000 项上限")
-		return
-	}
-	entries := make([]v1.Entry, 0, len(items))
-	for _, item := range items {
-		info, err := item.Info()
-		if err != nil {
-			fail(w, 403, "path_denied", "目录内容不可读取")
-			return
-		}
-		if info.Mode()&os.ModeSymlink != 0 || (!info.Mode().IsRegular() && !info.IsDir()) {
-			continue
-		}
-		size := info.Size()
-		if info.IsDir() {
-			size = 0
-		}
-		entries = append(entries, v1.Entry{Name: item.Name(), Directory: info.IsDir(), SizeBytes: size})
-	}
-	slices.SortFunc(entries, func(a, b v1.Entry) int { return strings.Compare(a.Name, b.Name) })
-	send(w, 200, v1.EntryList{ShareID: id, Path: path, Entries: entries})
 }

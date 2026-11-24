@@ -8,6 +8,8 @@
 
 P2.6 优化主题、任务反馈、设备观察与编辑抽屉、日志跳转和下载完成定位；上传支持拖入选择，原生拖放尚待现场验收，具体实测与限制见 [P2.6 验收](docs/validation/P2.6.md)。
 
+P2.9 为 Agent 和 CLI 补充目录分页：默认 100、最大 500 项/页，CLI `agent-status --share files --all` 可自动遍历。分页期间检测到目录变化会提示重新读取，支持超过 1000 项的目录；协议、使用方法和限制见 [目录分页验收](docs/validation/P2.9-directory-pagination.md)及 [ADR 0010](docs/adr/0010-directory-pagination.md)。本阶段未新增桌面目录浏览界面。
+
 ## 名称与输出
 
 | 项目 | 约定 |

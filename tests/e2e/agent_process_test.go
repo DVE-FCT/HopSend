@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"os"
 	"os/exec"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	v1 "github.com/DVE-FCT/HopSend/contracts/control/v1"
 	"github.com/DVE-FCT/HopSend/internal/agent/httpapi"
 	"github.com/DVE-FCT/HopSend/internal/nodeclient"
 )
@@ -40,6 +42,11 @@ func TestBuiltAgentAndCLIProcesses(t *testing.T) {
 	}
 	if err = os.WriteFile(filepath.Join(share, "process.txt"), []byte("process smoke"), 0600); err != nil {
 		t.Fatal(err)
+	}
+	for i := 0; i < 1004; i++ {
+		if err := os.WriteFile(filepath.Join(share, fmt.Sprintf("entry-%04d.txt", i)), []byte("metadata smoke"), 0600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	identity := filepath.Join(work, "identity")
 	if output, err := exec.CommandContext(ctx, cliPath, "agent-init", "--dir", identity, "--share-dir", share).CombinedOutput(); err != nil {
@@ -90,7 +97,7 @@ func TestBuiltAgentAndCLIProcesses(t *testing.T) {
 		}
 		time.Sleep(40 * time.Millisecond)
 	}
-	output, err := exec.CommandContext(ctx, cliPath, "agent-status", "--url", "https://"+cfg.Listen, "--ca-cert", filepath.Join(identity, "ca.crt"), "--token-file", filepath.Join(identity, "client.token"), "--share", "files").CombinedOutput()
+	output, err := exec.CommandContext(ctx, cliPath, "agent-status", "--url", "https://"+cfg.Listen, "--ca-cert", filepath.Join(identity, "ca.crt"), "--token-file", filepath.Join(identity, "client.token"), "--share", "files", "--limit", "500", "--all").CombinedOutput()
 	if err != nil {
 		t.Fatalf("compiled CLI: %v %s", err, output)
 	}
@@ -98,17 +105,18 @@ func TestBuiltAgentAndCLIProcesses(t *testing.T) {
 		Health struct {
 			Status string `json:"status"`
 		} `json:"health"`
-		Directory struct {
-			Entries []struct {
-				Name string `json:"name"`
-			} `json:"entries"`
-		} `json:"directory"`
+		Directory v1.EntryList `json:"directory"`
 	}
 	if err = json.Unmarshal(output, &result); err != nil {
 		t.Fatal(err)
 	}
-	if result.Health.Status != "ok" || len(result.Directory.Entries) != 1 || result.Directory.Entries[0].Name != "process.txt" {
+	if result.Health.Status != "ok" || len(result.Directory.Entries) != 1005 || result.Directory.Entries[1004].Name != "process.txt" || result.Directory.HasMore || result.Directory.NextCursor != "" {
 		t.Fatalf("unexpected process response: %s", output)
 	}
-	t.Log("compiled Agent and CLI communicated over real authenticated HTTPS; shared file metadata verified")
+	for i, entry := range result.Directory.Entries[:1004] {
+		if entry.Name != fmt.Sprintf("entry-%04d.txt", i) {
+			t.Fatalf("missing/out-of-order entry %d: %q", i, entry.Name)
+		}
+	}
+	t.Log("compiled Agent and CLI communicated over real authenticated HTTPS; 1005 entries across 3 pages verified")
 }

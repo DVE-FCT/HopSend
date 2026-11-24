@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	v1 "github.com/DVE-FCT/HopSend/contracts/control/v1"
 	"github.com/DVE-FCT/HopSend/internal/agent/httpapi"
 	"github.com/DVE-FCT/HopSend/internal/nodeclient"
 	"github.com/DVE-FCT/HopSend/internal/security"
@@ -113,11 +114,14 @@ func runAgentStatus(ctx context.Context, args []string, out, stderr io.Writer) i
 	token := flags.String("token-file", "", "本设备凭据文件")
 	share := flags.String("share", "", "可选，列出此共享的目录")
 	path := flags.String("path", ".", "共享内相对目录")
+	limit := flags.Int("limit", v1.DefaultEntryPageSize, "目录单页项目数（1-500，默认 100）")
+	cursor := flags.String("cursor", "", "从上一页返回的目录游标")
+	all := flags.Bool("all", false, "自动读取目录的所有分页；目录变化时失败并要求重新读取")
 	timeout := flags.Duration("timeout", 10*time.Second, "请求超时")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
-	if flags.NArg() != 0 || *timeout <= 0 {
+	if flags.NArg() != 0 || *timeout <= 0 || *limit < 1 || *limit > v1.MaxEntryPageSize || (*all && *cursor != "") || (*share == "" && (*all || *cursor != "")) {
 		return 2
 	}
 	c, err := nodeclient.New(nodeclient.Config{URL: *address, CACertificate: *ca, TokenFile: *token, Timeout: *timeout})
@@ -143,7 +147,12 @@ func runAgentStatus(ctx context.Context, args []string, out, stderr io.Writer) i
 	}
 	result := map[string]any{"health": health, "capabilities": capabilities, "shares": shares.Shares}
 	if *share != "" {
-		entries, err := c.Entries(ctx, *share, *path)
+		var entries v1.EntryList
+		if *all {
+			entries, err = c.EntriesAll(ctx, *share, *path, *limit)
+		} else {
+			entries, err = c.EntriesPage(ctx, *share, *path, *limit, *cursor)
+		}
 		if err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1
