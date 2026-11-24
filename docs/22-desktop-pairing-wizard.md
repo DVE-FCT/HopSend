@@ -13,6 +13,12 @@
 
 请求和信任资料在当前账号的应用数据目录，返回的公开请求路径可复制或在资源管理器中找到。公开请求不含私钥。回应和配对包含 API Token，只交给对应请求电脑，不公开分享。
 
+## 已配对设备的信任轮换
+
+远端换证书或 SSH 主机密钥后，在原设备卡片点“轮换信任”。导出该设备原公开请求，让源电脑针对它生成新回应；选择新包，重新通过可信渠道核对完整 SSH/CA 指纹，点“确认轮换并验收”。仍使用原设备 ID、本机私钥、显示名称和托管选择。
+
+轮换会保留旧凭据路径和任务历史，不删除再建设备。旧任务仍绑定旧授权，远端撤销旧授权后可能无法继续；此操作不会自动迁移任务凭据。新资料写入失败时，当前设备引用保持不变；网络验收失败时保留已选定的新资料，不自动回退旧身份。普通配对导入不能覆盖轮换后的引用。见 [ADR 0013](adr/0013-versioned-trust-rotation.md)和 [P2.13 验收](validation/P2.13-trust-rotation.md)。
+
 ## 配对包格式
 
 `.hopsend-pair` 是有大小限制的 ZIP，使用既有三个材料：`device.json`、`ca.crt` 和 `client.token`。`device.json` 保存 SSH 主机公钥；客户端据已核对的公钥生成 `known_hosts`，无需另行选文件。SSH 私钥始终由客户端生成并保留，不进入配对包。
@@ -34,6 +40,7 @@ PairLocalIdentity() (PairIdentity, error)
 PairCreateRequest(sourceIP, name string) (PairRequestResult, error)
 PairInspectReply(replyPath string) (PairInspectResult, error)
 PairImportReply(replyPath, expectedSSH, expectedCA string) (string, error)
+RotateDeviceTrust(id, replyPath, expectedSSH, expectedCA string) (Device, error)
 ```
 
 方法实现按职责放在 `apps/desktop/pairing_material_windows.go`，仍由同一个 `App` 绑定到桌面。`bridge.ts` 声明相同参数和返回值。`PairImportReply` 只接受近期检视过且哈希未改变的回应；自动保存的设备 ID 为原请求 ID，相同回应不重复新增。

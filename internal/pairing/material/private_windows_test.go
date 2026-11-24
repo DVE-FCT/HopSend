@@ -78,6 +78,21 @@ func TestWindowsPrivateReplyCache(t *testing.T) {
 	assertPrivateACL(t, file)
 }
 
+func TestWindowsRotatedMaterialsKeepPrivateACL(t *testing.T) {
+	f := fixture(t)
+	if _, err := ImportReply(t.Context(), f.store, f.data(t), f.expected); err != nil {
+		t.Fatal(err)
+	}
+	next := replacement(t, f)
+	result, err := StageTrustRotation(t.Context(), next.store, next.data(t), next.expected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"", "ca.crt", "client.token", "known_hosts", "connection.json", "device.json"} {
+		assertPrivateACL(t, filepath.Join(filepath.Dir(result.ConnectionFile), name))
+	}
+}
+
 func TestWindowsExportedPairPackageACL(t *testing.T) {
 	f := fixture(t)
 	file := filepath.Join(t.TempDir(), "private.hopsend-pair")

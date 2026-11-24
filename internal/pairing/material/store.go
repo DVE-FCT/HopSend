@@ -222,6 +222,20 @@ func CreateRequest(ctx context.Context, options RequestOptions) (RequestResult, 
 }
 
 func ImportReply(ctx context.Context, trustDirectory string, data []byte, expected Expected) (ImportResult, error) {
+	return importReply(ctx, trustDirectory, data, expected, false)
+}
+
+// StageTrustRotation publishes an immutable credential version. It does not
+// select it for any device, rewrite paired/, or migrate persisted tasks. The
+// caller must atomically commit its device reference only after success.
+func StageTrustRotation(ctx context.Context, trustDirectory string, data []byte, expected Expected) (ImportResult, error) {
+	if expected.RequestID == "" {
+		return ImportResult{}, failure("轮换信任", "binding_mismatch", "轮换必须绑定已有配对请求")
+	}
+	return importReply(ctx, trustDirectory, data, expected, true)
+}
+
+func importReply(ctx context.Context, trustDirectory string, data []byte, expected Expected, rotation bool) (ImportResult, error) {
 	var result ImportResult
 	verified, err := VerifyReply(data, expected)
 	if err != nil {
@@ -262,7 +276,25 @@ func ImportReply(ctx context.Context, trustDirectory string, data []byte, expect
 		return result, failure("锁定导入", "import_busy", "同一请求已有导入操作，或无法取得写入锁")
 	}
 	defer lock.Close()
-	paired := filepath.Join(dir, "paired")
+	target := "paired"
+	if rotation {
+		originalData, err := readRegular(filepath.Join(dir, "paired", "device.json"), v1.MaxJSONBytes)
+		var original v1.ReplyDevice
+		if err != nil || strictJSON(originalData, &original) != nil || original.RequestID != request.RequestID {
+			return ImportResult{}, failure("轮换信任", "trust_not_found", "未找到该请求的已有信任，请先完成首次配对")
+		}
+		// Hash semantic device fields plus exact credential bytes, so ZIP/JSON
+		// formatting changes do not create a different version on retry.
+		identity, err := json.Marshal(struct {
+			Device    v1.ReplyDevice
+			CA, Token []byte
+		}{verified.Device, verified.files["ca.crt"], verified.files["client.token"]})
+		if err != nil {
+			return ImportResult{}, err
+		}
+		target = "paired-" + digest(identity)
+	}
+	paired := filepath.Join(dir, target)
 	connection := v1.Connection{Name: verified.Device.Name, AgentURL: verified.Device.AgentURL, SSHAddress: verified.Device.SSHAddress, SSHUser: verified.Device.SSHUser, CAFile: filepath.Join(paired, "ca.crt"), TokenFile: filepath.Join(paired, "client.token"), KeyFile: filepath.Join(dir, "id_ed25519"), KnownHostsFile: filepath.Join(paired, "known_hosts"), ShareID: verified.Device.ShareID, RemoteAgentConfig: verified.Device.RemoteAgentConfig, ManageAgent: true}
 	connectionData, err := json.MarshalIndent(connection, "", "  ")
 	if err != nil {
@@ -334,7 +366,7 @@ func ImportReply(ctx context.Context, trustDirectory string, data []byte, expect
 	if err := ctx.Err(); err != nil {
 		return ImportResult{}, err
 	}
-	if err := root.Rename(temporary, "paired"); err != nil {
+	if err := root.Rename(temporary, target); err != nil {
 		return ImportResult{}, failure("发布信任", "publish_failed", "完整资料发布失败，不覆盖已有信任")
 	}
 	return result, nil

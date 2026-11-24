@@ -244,55 +244,94 @@ func (a *App) PairInspectReply(replyPath string) (PairInspectResult, error) {
 	return PairInspectResult{Device: preview.Device, MaterialsVerified: true, TrustVerified: false, PackageSHA256: preview.PackageSHA256}, nil
 }
 
-// PairImportReply imports only the exact previewed package and saves an
-// unverified device. PrepareDevice remains the explicit live acceptance step.
+// PairImportReply imports only the exact previewed package and saves a device.
+// Live acceptance is a separate, automatically invoked desktop step.
 func (a *App) PairImportReply(replyPath, expectedSSH, expectedCA string) (string, error) {
+	file, _, err := a.importReviewedReply("", replyPath, expectedSSH, expectedCA)
+	return file, err
+}
+
+// RotateDeviceTrust is an explicit local trust update, never an implicit
+// consequence of discovery, health checks or ordinary package import.
+func (a *App) RotateDeviceTrust(id, replyPath, expectedSSH, expectedCA string) (Device, error) {
+	if id == "" {
+		return Device{}, errors.New("请选择要轮换信任的已有设备")
+	}
+	_, device, err := a.importReviewedReply(id, replyPath, expectedSSH, expectedCA)
+	return device, err
+}
+
+func (a *App) importReviewedReply(rotationID, replyPath, expectedSSH, expectedCA string) (string, Device, error) {
 	if err := a.Ready(); err != nil {
-		return "", err
+		return "", Device{}, err
 	}
 	path, err := filepath.Abs(replyPath)
 	if err != nil {
-		return "", err
+		return "", Device{}, err
 	}
 	a.mu.Lock()
 	review, ok := a.packageReviews[path]
 	if !ok || time.Now().After(review.expires) || a.packageImporting {
 		a.mu.Unlock()
-		return "", errors.New("请先检视回应并完成指纹核对；预览已过期、已替换或正在导入")
+		return "", Device{}, errors.New("请先检视回应并完成指纹核对；预览已过期、已替换或正在导入")
 	}
 	a.packageImporting = true
 	a.mu.Unlock()
 	defer func() { a.mu.Lock(); a.packageImporting = false; a.mu.Unlock() }()
+	var original *Device
+	if current, err := a.findDevice(review.preview.Device.RequestID); err == nil {
+		original = &current
+	}
+	if rotationID != "" && (original == nil || original.ID != rotationID) {
+		return "", Device{}, errors.New("新回应不属于所选设备的原配对请求，请重新导出该设备的原公开请求")
+	}
 	data, err := material.ReadPackage(path)
 	if err != nil {
-		return "", err
+		return "", Device{}, err
 	}
 	hash := sha256.Sum256(data)
 	if hex.EncodeToString(hash[:]) != review.preview.PackageSHA256 {
-		return "", errors.New("回应文件在检视后发生变化，请重新检视并核对")
+		return "", Device{}, errors.New("回应文件在检视后发生变化，请重新检视并核对")
 	}
 	trust, err := pairingTrustRoot()
 	if err != nil {
-		return "", err
+		return "", Device{}, err
+	}
+	if original != nil && original.KeyFile != filepath.Join(trust, original.ID, "id_ed25519") {
+		return "", Device{}, errors.New("已有设备的本机密钥引用与原配对不一致，未替换设备")
+	}
+	if rotationID == "" && original != nil && (filepath.Clean(original.CAFile) != filepath.Join(trust, original.ID, "paired", "ca.crt") || filepath.Clean(original.TokenFile) != filepath.Join(trust, original.ID, "paired", "client.token") || filepath.Clean(original.KnownHostsFile) != filepath.Join(trust, original.ID, "paired", "known_hosts")) {
+		return "", Device{}, errors.New("该设备已轮换或修改信任引用，请通过“轮换信任”显式更新，普通导入不会回退旧版本")
 	}
 	address, _, _ := net.SplitHostPort(review.preview.Device.SSHAddress)
 	ctx, cancel := context.WithTimeout(a.ctx, 2*time.Minute)
 	defer cancel()
-	result, err := material.ImportReply(ctx, trust, data, material.Expected{SSHFingerprint: expectedSSH, CASHA256: expectedCA, RequestID: review.preview.Device.RequestID, ReceiverIP: address})
+	importer := material.ImportReply
+	if rotationID != "" {
+		importer = material.StageTrustRotation
+	}
+	result, err := importer(ctx, trust, data, material.Expected{SSHFingerprint: expectedSSH, CASHA256: expectedCA, RequestID: review.preview.Device.RequestID, ReceiverIP: address})
 	if err != nil {
-		return "", err
+		return "", Device{}, err
 	}
 	config, err := os.ReadFile(result.ConnectionFile)
 	if err != nil || len(config) > v1.MaxJSONBytes {
-		return "", errors.New("导入后的连接配置不可读取")
+		return "", Device{}, errors.New("导入后的连接配置不可读取")
 	}
 	var device Device
 	if err := json.Unmarshal(config, &device); err != nil {
-		return "", err
+		return "", Device{}, err
 	}
 	device.ID = review.preview.Device.RequestID
-	if _, err := a.SaveDevice(device); err != nil {
-		return "", err
+	if original != nil {
+		device.Name, device.ManageAgent = original.Name, original.ManageAgent
 	}
-	return result.ConnectionFile, nil
+	baseline := original
+	if baseline == nil {
+		baseline = &Device{}
+	}
+	if _, err := a.saveDevice(device, baseline); err != nil {
+		return "", Device{}, err
+	}
+	return result.ConnectionFile, device, nil
 }
