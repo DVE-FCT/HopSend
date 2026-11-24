@@ -14,6 +14,8 @@ try {
             if ($LASTEXITCODE -ne 0) { throw '前端 TypeScript 或构建失败' }
         } finally { Pop-Location }
     }
+    & node --test scripts/check/package-flow.test.mjs
+    if ($LASTEXITCODE -ne 0) { throw '配对向导流程检查失败' }
     $unformatted = @(& gofmt -l apps internal configs contracts tests)
     if ($LASTEXITCODE -ne 0 -or $unformatted.Count -gt 0) { throw ('Go 格式检查失败: ' + ($unformatted -join ', ')) }
     & go vet ./...

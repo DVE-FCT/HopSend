@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watchEffect, onMounted, onUnmounted } from "vue";
+import { ref, watchEffect } from "vue";
 import { backend, type Device } from "../bridge";
 import Icon from "./Icon.vue";
 const props = defineProps<{ devices: Device[] }>();
@@ -12,27 +12,14 @@ const device = ref(""),
   error = ref(""),
   dropNotice = ref(""),
   preparing = ref(false);
-let dropRegistered = false;
-onMounted(() => {
-  if (!window.runtime) return;
-  window.runtime.OnFileDrop((_x, _y, paths) => {
-    if (busy.value) {
-      dropNotice.value = "正在处理上传，请完成后再选择其他内容。";
-      return;
-    }
-    if (paths.length !== 1) {
-      error.value = "每次添加一个文件或文件夹；多个文件可先放入一个文件夹。";
-      return;
-    }
-    source.value = paths[0] || "";
-    error.value = "";
-    dropNotice.value = "已选择拖入的内容，核对接收设备后点击开始上传。";
-  }, true);
-  dropRegistered = true;
-});
-onUnmounted(() => {
-  if (dropRegistered) window.runtime?.OnFileDropOff();
-});
+function selectDropped(paths: string[]) {
+  if (busy.value) { dropNotice.value = "正在处理上传，请完成后再选择其他内容。"; return; }
+  if (paths.length !== 1) { error.value = "每次添加一个文件或文件夹；多个文件可先放入一个文件夹。"; return; }
+  source.value = paths[0] || "";
+  error.value = "";
+  dropNotice.value = "已选择拖入的内容，核对接收设备后点击开始上传。";
+}
+defineExpose({selectDropped});
 watchEffect(() => {
   if (!device.value) device.value = props.devices[0]?.id || "";
 });

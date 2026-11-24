@@ -277,7 +277,12 @@ func ImportReply(ctx context.Context, trustDirectory string, data []byte, expect
 		}
 		for name, expectedData := range verified.files {
 			actual, err := readRegular(filepath.Join(paired, name), v1.MaxJSONBytes)
-			if err != nil || !bytes.Equal(actual, expectedData) {
+			matches := err == nil && bytes.Equal(actual, expectedData)
+			if name == "device.json" && err == nil {
+				var original v1.ReplyDevice
+				matches = strictJSON(actual, &original) == nil && original == verified.Device
+			}
+			if !matches {
 				return ImportResult{}, failure("固定信任", "trust_conflict", "重试回应与原信任资料不同，不覆盖原信任")
 			}
 		}
