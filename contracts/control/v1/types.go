@@ -1,5 +1,10 @@
-// Package controlv1 defines the implemented P0.3 control-plane wire types.
+// Package controlv1 defines the implemented control-plane wire types.
 package controlv1
+
+const (
+	DefaultEntryPageSize = 100
+	MaxEntryPageSize     = 500
+)
 
 type Health struct {
 	Status     string `json:"status"`
@@ -28,9 +33,11 @@ type Entry struct {
 	SizeBytes int64  `json:"size_bytes"`
 }
 type EntryList struct {
-	ShareID string  `json:"share_id"`
-	Path    string  `json:"path"`
-	Entries []Entry `json:"entries"`
+	ShareID    string  `json:"share_id"`
+	Path       string  `json:"path"`
+	Entries    []Entry `json:"entries"`
+	NextCursor string  `json:"next_cursor"`
+	HasMore    bool    `json:"has_more"`
 }
 type ErrorDetail struct {
 	Code    string `json:"code"`

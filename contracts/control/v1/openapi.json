@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "HopSend Agent 控制接口",
-    "version": "0.2.0",
-    "description": "受认证的 HTTPS 控制面，提供健康、能力、授权目录和已发布不可变文件清单。文件字节通过独立 SFTP 传输；上传能力尚未实现。"
+    "version": "0.3.0",
+    "description": "受认证的 HTTPS 控制面，提供健康、能力、授权目录和已发布不可变文件清单。目录支持稳定名称排序分页；文件字节通过独立 SFTP 传输。"
   },
   "servers": [
     {
@@ -166,7 +166,7 @@
             }
           },
           "400": {
-            "description": "路径格式无效或不是目录",
+            "description": "路径、limit 或 cursor 无效，或目标不是目录；Agent 重启后的旧游标也会失效",
             "content": {
               "application/json": {
                 "schema": {
@@ -195,8 +195,18 @@
               }
             }
           },
+          "409": {
+            "description": "目录在分页期间发生变化，游标失效，客户端应从第一页重新读取",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "413": {
-            "description": "超过单次 1000 项目录上限",
+            "description": "目录超过 100000 项扫描上限（不是单页限制）",
             "content": {
               "application/json": {
                 "schema": {
@@ -225,8 +235,31 @@
               "type": "string",
               "default": "."
             }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "单页项目数，默认 100，最大 500",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 100
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "上一页返回的不透明签名游标，原样传回；不可跨共享/相对目录复用。目录变化或 Agent 重启后应从第一页重读。",
+            "schema": {
+              "type": "string",
+              "maxLength": 4096
+            }
           }
-        ]
+        ],
+        "description": "按 UTF-8 名称字节序排列。默认 100、最大 500 项/页；cursor 是 Agent 签名的不透明游标，绑定共享、相对目录和目录元数据指纹。分页间检测到变化返回 409 cursor_stale，必须丢弃已有结果并从第一页重试。Agent 重启后游标失效（400 invalid_cursor）。每页重新扫描元数据，最多扫描 100000 项；不提供原子文件系统快照或文件内容版本保证。"
       }
     },
     "/v1/shares/{share_id}/manifests/{manifest_id}": {
@@ -783,7 +816,9 @@
         "required": [
           "share_id",
           "path",
-          "entries"
+          "entries",
+          "next_cursor",
+          "has_more"
         ],
         "properties": {
           "share_id": {
@@ -794,12 +829,22 @@
           },
           "entries": {
             "type": "array",
-            "maxItems": 1000,
+            "maxItems": 500,
             "items": {
               "$ref": "#/components/schemas/Entry"
             }
+          },
+          "next_cursor": {
+            "type": "string",
+            "maxLength": 4096,
+            "description": "下一页游标；最后一页为空字符串"
+          },
+          "has_more": {
+            "type": "boolean",
+            "description": "是否还有下一页"
           }
-        }
+        },
+        "description": "按名称 UTF-8 字节序排序的一页目录；has_more 与 next_cursor 是否非空一致。扫描中或分页间检测到元数据变化返回 cursor_stale。目录枚举不等于原子快照，内容身份由不可变 manifest 校验。"
       },
       "Error": {
         "type": "object",

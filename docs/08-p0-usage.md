@@ -68,7 +68,7 @@ go test -v -count=1 -timeout=90s ./tests/integration
 
 ## P0.3 HTTPS Agent
 
-当前实现四个受认证 GET 接口：health、capabilities、shares、shares/{share_id}/entries。
+当前实现四个受认证 GET 接口：health、capabilities、shares、shares/{share_id}/entries。目录接口支持按名称稳定排序的 limit/cursor 分页，默认每页 100 项、最大每页 500 项。
 正式契约为 contracts/control/v1/openapi.json（OpenAPI 3.1）。API 明确返回 upload_supported=false；没有上传、manifest 或内容中转能力。
 
 ```powershell
@@ -94,7 +94,23 @@ Windows 上 0600 并不等于完整 NTFS ACL 配置，生成目录仅供当前�
 共享配置使用 id/path，身份配置使用 id/token_file/share_ids。每台设备应分配不同随机凭据，授权共享列表分别设置；权限不自动同步到 SSH 账号。
 服务端拒绝重复凭据、重复 ID 或不存在的共享引用，读取配置时拒绝未知字段。
 
-目录接口只返回相对名称、类型和大小，不返回绝对系统路径。拒绝 ..、绝对路径、反斜线、冒号、NUL 以及 symlink/junction 遍历；使用 os.Root 进一步约束路径解析。首版单次目录上限 1000 项，没有分页，超过上限返回 413。
+目录接口只返回相对名称、类型和大小，不返回绝对系统路径。拒绝 ..、绝对路径、反斜线、冒号、NUL 以及 symlink/junction 遍历；使用 os.Root 进一步约束路径解析。请求可带 `limit=1..500`，响应包含 `next_cursor` 和 `has_more`。游标绑定共享、相对目录和目录快照指纹；目录内容或可见元数据在分页期间变化时，后续请求返回 HTTP 409 `cursor_stale`，客户端应丢弃游标并从第一页重新读取。这样可以避免新增、删除或重命名造成静默漏项和重复。
+
+CLI 单页查询示例：
+
+```powershell
+go run ./apps/cli agent-status --url https://localhost:9443 `
+  --ca-cert work/local-agent/ca.crt --token-file work/local-agent/client.token `
+  --share files --path . --limit 200
+```
+
+需要一次读取全部页面时使用 `--all`。它会在目录变化时失败并报告 `cursor_stale`，由调用方重新执行：
+
+```powershell
+go run ./apps/cli agent-status --url https://localhost:9443 `
+  --ca-cert work/local-agent/ca.crt --token-file work/local-agent/client.token `
+  --share files --path . --limit 200 --all
+```
 
 客户端验证 TLS 1.3 证书链和实际主机名，只信任显式提供的 CA，不跳过检查，不接受重定向；所有控制接口都需要 Bearer 凭据。
 凭据存放文件而非命令行参数，日志与状态不输出凭据内容。CA 公钥仍需经可信渠道核对初始化时输出的 SHA-256。
@@ -103,3 +119,9 @@ Windows 上 0600 并不等于完整 NTFS ACL 配置，生成目录仅供当前�
 
 运行 check-go.ps1 后，可直接执行 dist/cli/hopsend-cli.exe 与 dist/agent/hopsend-agent.exe；这两个文件尚未制作安装器。
 Agent 当前为前台进程，Ctrl+C 停止。没有安装后台服务、修改防火墙或启用 Windows SSH 服务。
+
+## 目录分页边界（P2.9 更新）
+
+目录名称按 UTF-8 字节序排序；游标由当前 Agent 实例签名，不能跨共享、目录或实例复用。Agent 重启后旧游标返回 400 `invalid_cursor`，需要从第一页重读。每一页仍需提供原有 Token 和共享授权。客户端和 Agent 应同批升级：旧客户端会拒绝新增响应字段；新版调用方必须处理 `has_more`，或使用 `EntriesAll` / CLI `--all`。
+
+每页扫描目录元数据以检测变化，扫描最多 100000 项，超限返回 413；大目录和小页长会增加扫描开销。本功能未提供事务快照；并发修改或保持相同大小/时间的同名替换可能无法完整识别。文件内容版本继续由可信 manifest 与 SHA-256 校验保证。目录包传输自身的 10000 项限制不受此修改影响。本阶段不新增桌面目录浏览界面。

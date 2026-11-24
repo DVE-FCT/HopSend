@@ -10,9 +10,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -152,10 +154,86 @@ func (c *Client) Shares(ctx context.Context) (v1.ShareList, error) {
 	err := c.get(ctx, "/v1/shares", &value)
 	return value, err
 }
+
+// Entries reads the first page using the default page size. Use EntriesPage for
+// continuation or EntriesAll for a complete, bounded traversal.
 func (c *Client) Entries(ctx context.Context, id, path string) (v1.EntryList, error) {
+	return c.EntriesPage(ctx, id, path, 0, "")
+}
+
+// EntriesPage reads one stable, name-ordered directory page. A non-empty
+// next_cursor must be passed back unchanged until has_more is false. If the
+// directory changes between pages, the Agent returns cursor_stale and callers
+// should restart from an empty cursor.
+func (c *Client) EntriesPage(ctx context.Context, id, path string, limit int, cursor string) (v1.EntryList, error) {
 	var value v1.EntryList
-	err := c.get(ctx, "/v1/shares/"+url.PathEscape(id)+"/entries?path="+url.QueryEscape(path), &value)
+	if limit == 0 {
+		limit = v1.DefaultEntryPageSize
+	}
+	if limit < 1 || limit > v1.MaxEntryPageSize || len(cursor) > 4096 {
+		return value, errors.New("目录分页参数无效：limit 必须为 1 到 500，cursor 最长 4096 字节")
+	}
+	if path == "" {
+		path = "."
+	}
+	query := url.Values{}
+	query.Set("path", path)
+	if limit > 0 {
+		query.Set("limit", strconv.Itoa(limit))
+	}
+	if cursor != "" {
+		query.Set("cursor", cursor)
+	}
+	err := c.get(ctx, "/v1/shares/"+url.PathEscape(id)+"/entries?"+query.Encode(), &value)
+	if err == nil {
+		err = validateEntryPage(value, id, path, limit, cursor)
+	}
 	return value, err
+}
+
+func validateEntryPage(page v1.EntryList, id, path string, limit int, cursor string) error {
+	if page.ShareID != id || page.Path != path || page.Entries == nil || len(page.Entries) > limit || len(page.NextCursor) > 4096 || page.HasMore != (page.NextCursor != "") || (page.HasMore && (len(page.Entries) == 0 || page.NextCursor == cursor)) {
+		return errors.New("Agent 目录分页响应不一致")
+	}
+	previous := ""
+	for _, entry := range page.Entries {
+		if !fs.ValidPath(entry.Name) || strings.Contains(entry.Name, "/") || entry.Name == "." || entry.SizeBytes < 0 || (entry.Directory && entry.SizeBytes != 0) || (previous != "" && entry.Name <= previous) {
+			return errors.New("Agent 目录项目无效或未严格按名称排序")
+		}
+		previous = entry.Name
+	}
+	return nil
+}
+
+// EntriesAll aggregates pages only when the complete traversal succeeds. It
+// does not return partial results on cursor_stale or silently retry a changing
+// directory. Interactive callers should use EntriesPage to avoid buffering all
+// metadata. The bound matches the Agent's directory scan limit.
+func (c *Client) EntriesAll(ctx context.Context, id, path string, limit int) (v1.EntryList, error) {
+	var result v1.EntryList
+	cursor := ""
+	for {
+		page, err := c.EntriesPage(ctx, id, path, limit, cursor)
+		if err != nil {
+			return v1.EntryList{}, err
+		}
+		if len(result.Entries) > 0 && len(page.Entries) > 0 && page.Entries[0].Name <= result.Entries[len(result.Entries)-1].Name {
+			return v1.EntryList{}, errors.New("Agent 目录分页出现重复或倒序项目")
+		}
+		if len(result.Entries)+len(page.Entries) > 100000 {
+			return v1.EntryList{}, errors.New("目录超过 100000 项聚合上限，请逐页浏览")
+		}
+		if result.Entries == nil {
+			result = page
+		} else {
+			result.Entries = append(result.Entries, page.Entries...)
+			result.NextCursor, result.HasMore = page.NextCursor, page.HasMore
+		}
+		if !page.HasMore {
+			return result, nil
+		}
+		cursor = page.NextCursor
+	}
 }
 
 func (c *Client) Manifest(ctx context.Context, share, id string) (manifestv1.Published, error) {
