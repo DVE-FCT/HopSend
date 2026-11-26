@@ -43,6 +43,7 @@ apps/desktop/frontend/src/generated/
 *.hopsend.lock
 *.sqlite3
 *.pre-v3-*.bak
+*.pre-v4-*.bak
 *.log
 *.partial
 *.part

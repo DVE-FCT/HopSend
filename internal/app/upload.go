@@ -141,7 +141,7 @@ func uploadAttempt(ctx context.Context, r DownloadRequest) (engine.DownloadResul
 	}
 	defer root.Close()
 	m, err := manifest.Load(root, r.ManifestID)
-	if err != nil || m.ShareID != r.ShareID {
+	if err != nil || (r.UploadManifestScope != "source_snapshot" && m.ShareID != r.ShareID) || (r.UploadManifestScope != "" && r.UploadManifestScope != "source_snapshot") {
 		return engine.DownloadResult{}, errors.New("本机上传快照清单不可用或共享不一致")
 	}
 	client, err := nodeclient.New(r.Agent)
@@ -149,7 +149,7 @@ func uploadAttempt(ctx context.Context, r DownloadRequest) (engine.DownloadResul
 		return engine.DownloadResult{}, err
 	}
 	defer client.Close()
-	session, err := client.CreateUpload(ctx, v1.CreateUpload{RequestID: engine.TaskID(m.ManifestID, r.Destination), ShareID: r.ShareID, Target: r.UploadTarget, ParentPath: r.UploadParentPath, Manifest: m})
+	session, err := client.CreateUpload(ctx, v1.CreateUpload{RequestID: engine.TaskID(m.ManifestID, r.Destination), ShareID: r.ShareID, Target: r.UploadTarget, ParentPath: r.UploadParentPath, ManifestScope: r.UploadManifestScope, Manifest: m})
 	if err != nil {
 		return engine.DownloadResult{}, err
 	}

@@ -22,13 +22,25 @@ func (c *Client) CreateUpload(ctx context.Context, request v1.CreateUpload) (v1.
 		return s, err
 	}
 	request.ParentPath = parent
+	if request.ManifestScope != "" {
+		if request.ManifestScope != "source_snapshot" {
+			return s, errors.New("上传清单模式无效")
+		}
+		caps, err := c.Capabilities(ctx)
+		if err != nil {
+			return s, err
+		}
+		if caps.APIVersion != "v1" || !slices.Contains(caps.Operations, "upload_source_snapshot") {
+			return s, errors.New("接收端不支持共享源快照，请升级 Agent")
+		}
+	}
 	if parent != "" {
 		if err := c.RequireUploadParent(ctx); err != nil {
 			return s, err
 		}
 	}
 	err = c.request(ctx, http.MethodPost, "/v1/uploads", request, &s, false)
-	if err == nil && (!validSession(s.ID) || s.RequestID != request.RequestID || s.ManifestID != request.Manifest.ManifestID || s.ShareID != request.ShareID || s.Target != request.Target || s.ParentPath != request.ParentPath || s.SFTPPath == "") {
+	if err == nil && (!validSession(s.ID) || s.RequestID != request.RequestID || s.ManifestID != request.Manifest.ManifestID || s.ShareID != request.ShareID || s.Target != request.Target || s.ParentPath != request.ParentPath || s.ManifestScope != request.ManifestScope || s.SFTPPath == "") {
 		err = errors.New("接收端上传会话与请求不一致")
 	}
 	return s, err
@@ -66,7 +78,7 @@ func (c *Client) uploadOperation(ctx context.Context, id, suffix string, long bo
 	}
 	err := c.request(ctx, method, "/v1/uploads/"+id+suffix, nil, &s, long)
 	parent, parentErr := filesystem.UploadParent(s.ParentPath)
-	if err == nil && (parentErr != nil || parent != s.ParentPath || s.ID != id || !manifest.ValidID(s.ManifestID) || s.SFTPPath == "") {
+	if err == nil && (parentErr != nil || parent != s.ParentPath || (s.ManifestScope != "" && s.ManifestScope != "source_snapshot") || s.ID != id || !manifest.ValidID(s.ManifestID) || s.SFTPPath == "") {
 		err = errors.New("接收端会话响应身份无效")
 	}
 	return s, err

@@ -123,7 +123,7 @@ func (s *Server) createUpload(w http.ResponseWriter, r *http.Request, p *princip
 		fail(w, 400, "invalid_upload", "请求包含额外内容")
 		return
 	}
-	if !manifest.ValidID(request.RequestID) || manifest.Validate(request.Manifest) != nil || request.ShareID != request.Manifest.ShareID || filesystem.SafeLeaf(request.Target) != nil {
+	if !manifest.ValidID(request.RequestID) || manifest.Validate(request.Manifest) != nil || (request.ManifestScope == "" && request.ShareID != request.Manifest.ShareID) || (request.ManifestScope != "" && request.ManifestScope != "source_snapshot") || filesystem.SafeLeaf(request.Target) != nil {
 		fail(w, 400, "invalid_upload", "清单、请求 ID 或目标文件名无效")
 		return
 	}
@@ -148,7 +148,7 @@ func (s *Server) createUpload(w http.ResponseWriter, r *http.Request, p *princip
 	defer s.uploadCreateMu.Unlock()
 	existing, err := s.uploadStore.FindUpload(r.Context(), p.id, request.RequestID)
 	if err == nil {
-		if existing.ManifestID != request.Manifest.ManifestID || existing.ShareID != request.ShareID || existing.Target != request.Target || existing.ParentPath != parent {
+		if existing.ManifestID != request.Manifest.ManifestID || existing.ShareID != request.ShareID || existing.Target != request.Target || existing.ParentPath != parent || existing.ManifestScope != request.ManifestScope {
 			fail(w, 409, "request_conflict", "请求 ID 已绑定其他内容")
 			return
 		}

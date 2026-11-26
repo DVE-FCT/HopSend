@@ -71,3 +71,7 @@ Wails 项目根为 apps/desktop，根目录只有一份 go.mod。构建先安装
 界面每 750 毫秒读取共享应用层状态；Go 同时发布 task:progress 事件，载荷见 contracts/events/v1/events.schema.json。列表初次读取会将上次异常退出的活动状态标为可恢复，不把数据库旧状态当成仍有 worker 存活。
 
 确认上传见 [上传说明](14-confirmed-upload.md)，文件夹见 [路径说明](15-folder-transfer.md)，速度口径、持久记录与诊断见 [诊断监控](16-diagnostics-monitoring.md)。
+
+## 一发多收
+
+上传页切换“一发多收”，多选已配对设备并分别指定接收共享和父目录，一次创建固定快照后排队发送。下方批次卡片有逐台进度与批次控制，成功端不会重发；关闭重开后手动继续。副本引用、容量、旧 Agent 和 schema v4 升级边界见[完整说明](27-batch-upload.md)。

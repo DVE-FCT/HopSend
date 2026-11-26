@@ -15,6 +15,7 @@ import (
 
 var ErrPaused = errors.New("任务已暂停")
 var ErrCancelled = errors.New("任务已取消")
+var ErrUploadBudget = errors.New("上传活动块预算已满，等待其他任务释放")
 
 type TaskStatus struct {
 	engine.Progress
@@ -27,11 +28,13 @@ type TaskStatus struct {
 }
 
 type execution struct {
-	meter  *transferMeter
-	cancel context.CancelCauseFunc
-	done   chan struct{}
-	result engine.DownloadResult
-	err    error
+	meter         *transferMeter
+	cancel        context.CancelCauseFunc
+	done          chan struct{}
+	result        engine.DownloadResult
+	err           error
+	uploadNode    string
+	uploadWorkers int
 }
 
 // Manager owns live task lifetimes. A stop completes only after the Download
@@ -109,6 +112,22 @@ func (m *Manager) Start(parent context.Context, r DownloadRequest) (string, erro
 		m.mu.Unlock()
 		cancel(nil)
 		return "", errors.New("任务正在运行")
+	}
+	if r.Direction == "upload" {
+		global, node := 0, 0
+		for _, active := range m.active {
+			global += active.uploadWorkers
+			if active.uploadNode == r.SSH.Address {
+				node += active.uploadWorkers
+			}
+		}
+		if r.Workers > 2 || global+r.Workers > 4 || node+r.Workers > 2 {
+			m.mu.Unlock()
+			cancel(nil)
+			return "", ErrUploadBudget
+		}
+		e.uploadNode = r.SSH.Address
+		e.uploadWorkers = r.Workers
 	}
 	m.active[id] = e
 	delete(m.finished, id)

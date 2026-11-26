@@ -25,7 +25,7 @@ func (s *Store) CreateUpload(ctx context.Context, owner string, request v1.Creat
 	if err != nil {
 		return record, err
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO uploads(id,owner_id,request_id,share_id,target,manifest,staging,sftp_path,state,updated_at,parent_path,parent_identity) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(owner_id,request_id) DO NOTHING`, id, owner, request.RequestID, request.ShareID, request.Target, string(b), staging, sftpPath, "uploading", now(), request.ParentPath, parentIdentity)
+	_, err = s.db.ExecContext(ctx, `INSERT INTO uploads(id,owner_id,request_id,share_id,target,manifest,staging,sftp_path,state,updated_at,parent_path,parent_identity,manifest_scope) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(owner_id,request_id) DO NOTHING`, id, owner, request.RequestID, request.ShareID, request.Target, string(b), staging, sftpPath, "uploading", now(), request.ParentPath, parentIdentity, request.ManifestScope)
 	if err != nil {
 		return record, err
 	}
@@ -34,7 +34,7 @@ func (s *Store) CreateUpload(ctx context.Context, owner string, request v1.Creat
 		return record, err
 	}
 	record, err = s.Upload(ctx, id)
-	if err == nil && (record.Manifest.ManifestID != request.Manifest.ManifestID || record.Target != request.Target || record.ShareID != request.ShareID || record.ParentPath != request.ParentPath || record.ParentIdentity != parentIdentity) {
+	if err == nil && (record.Manifest.ManifestID != request.Manifest.ManifestID || record.Target != request.Target || record.ShareID != request.ShareID || record.ParentPath != request.ParentPath || record.ParentIdentity != parentIdentity || record.ManifestScope != request.ManifestScope) {
 		return record, errors.New("上传请求 ID 已绑定其他内容或目标")
 	}
 	return record, err
@@ -51,7 +51,7 @@ func (s *Store) FindUpload(ctx context.Context, owner, requestID string) (Upload
 func (s *Store) Upload(ctx context.Context, id string) (UploadRecord, error) {
 	var r UploadRecord
 	var raw string
-	err := s.db.QueryRowContext(ctx, `SELECT id,owner_id,request_id,share_id,target,manifest,staging,sftp_path,state,parent_path,parent_identity FROM uploads WHERE id=?`, id).Scan(&r.ID, &r.OwnerID, &r.RequestID, &r.ShareID, &r.Target, &raw, &r.Staging, &r.SFTPPath, &r.State, &r.ParentPath, &r.ParentIdentity)
+	err := s.db.QueryRowContext(ctx, `SELECT id,owner_id,request_id,share_id,target,manifest,staging,sftp_path,state,parent_path,parent_identity,manifest_scope FROM uploads WHERE id=?`, id).Scan(&r.ID, &r.OwnerID, &r.RequestID, &r.ShareID, &r.Target, &raw, &r.Staging, &r.SFTPPath, &r.State, &r.ParentPath, &r.ParentIdentity, &r.ManifestScope)
 	if err != nil {
 		return r, err
 	}
@@ -62,7 +62,7 @@ func (s *Store) Upload(ctx context.Context, id string) (UploadRecord, error) {
 		return r, err
 	}
 	parent, err := filesystem.UploadParent(r.ParentPath)
-	if err != nil || parent != r.ParentPath || filesystem.SafeLeaf(r.Target) != nil {
+	if err != nil || parent != r.ParentPath || filesystem.SafeLeaf(r.Target) != nil || (r.ManifestScope != "" && r.ManifestScope != "source_snapshot") || (r.ManifestScope == "" && r.ShareID != r.Manifest.ShareID) {
 		return r, errors.New("上传目录或名称记录损坏")
 	}
 	r.ManifestID = r.Manifest.ManifestID
