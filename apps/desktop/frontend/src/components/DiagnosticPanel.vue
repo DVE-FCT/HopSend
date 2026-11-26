@@ -94,7 +94,7 @@ async function stop() {
     </div>
     <div class="create-footer">
       <span
-        >设备在线、端口可达、身份可信、文件可读分别检查。<br />填写清单会产生实际流量；大块经中继读取可能耗时数分钟。</span
+        >逐层检查：设备可见、端口可达、身份可信、文件可读。<br />填写清单读取第 0 块；经中继时可能耗时数分钟。</span
       ><button v-if="busy" class="secondary" @click="stop">停止诊断</button
       ><button v-else class="primary" :disabled="!selected" @click="run">
         <Icon name="network" />开始诊断
@@ -109,7 +109,7 @@ async function stop() {
   >
     <span class="spinner"></span>
     <h3>正在检查连接与信任</h3>
-    <p>结果来自本次实际探测，请保持设备在线。</p>
+    <p>正在探测，保持设备在线。</p>
   </section>
   <template v-else-if="report">
     <section class="panel diagnostic-summary">
@@ -156,7 +156,7 @@ async function stop() {
   </template>
   <section v-else class="panel empty">
     <Icon name="network" />
-    <h3>让连接问题有据可查</h3>
+    <h3>尚未开始诊断</h3>
     <p>选择一台已配对设备，开始一次实际诊断。</p>
   </section>
 </template>
