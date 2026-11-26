@@ -21,6 +21,7 @@ import DiagnosticPanel from "./components/DiagnosticPanel.vue";
 import Icon from "./components/Icon.vue";
 import PairingWizard from "./components/PairingWizard.vue";
 import RemoteBrowser from "./components/RemoteBrowser.vue";
+import SourcePublisher from "./components/SourcePublisher.vue";
 import {classifyDroppedFiles} from "./package-flow";
 import {createHealthMonitor,type PairCompletion} from "./pairing-lifecycle";
 const transferMode = ref("download");
@@ -563,7 +564,7 @@ onUnmounted(() => {
           </div>
           <span>接收端校验后发布</span>
         </div>
-        <RemoteBrowser v-if="transferMode==='download'" :devices="devices" :device-id="selected" @device="selected=$event" @diagnose="diagnose" />
+        <RemoteBrowser v-if="transferMode==='download'" :devices="devices" :device-id="selected" @device="selected=$event" @diagnose="diagnose" @created="id=>{notice='已按选定快照创建下载任务';log(`创建路径下载任务：${id.slice(0,12)}`);void refresh();}" />
         <UploadPanel
           ref="uploadPanel"
           v-if="transferMode === 'upload'"
@@ -577,7 +578,7 @@ onUnmounted(() => {
         />
         <section v-else class="panel create">
           <div class="section-title">
-            <h2>新建下载</h2>
+            <h2>手工清单下载</h2>
             <span>01 / 选择设备与文件版本</span>
           </div>
           <div class="create-grid">
@@ -646,7 +647,7 @@ onUnmounted(() => {
         <div v-if="!tasks.length" class="empty panel">
           <Icon name="download" />
           <h3>还没有传输任务</h3>
-          <p>添加一台可信设备，填写清单 ID，开始第一次下载。</p>
+          <p>配对设备后，浏览共享目录并选择已发布版本；也可使用已有清单 ID。</p>
           <button class="secondary" @click="edit()">添加设备</button>
         </div>
         <div v-if="tasks.length" class="filters" aria-label="任务筛选">
@@ -786,6 +787,7 @@ onUnmounted(() => {
         </article>
       </template>
       <template v-if="page === 'devices'">
+        <SourcePublisher />
         <button class="secondary" @click="togglePairing">{{rotatingDevice?'返回首次配对':pairingOpen?'收起配对向导':'配对新设备'}}</button>
         <PairingWizard v-if="pairingOpen||!devices.length" :key="rotatingDevice?.id||'new'" class="panel" :devices="devices" :rotation-device="rotatingDevice" :dropped-path="droppedPackage" :drop-sequence="packageDropSequence" @legacy="importConfig" @paired="paired" />
         <div v-if="connectionFailure" class="message error" role="alert">设备资料已保留，连接验收未通过。<button class="text-button" @click="diagnose(connectionFailure)">诊断此设备</button></div>

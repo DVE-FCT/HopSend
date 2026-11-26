@@ -66,6 +66,8 @@ type App struct {
 	startupError        string
 	diagnosticCancel    context.CancelFunc
 	packageReviews      map[string]packageReview
+	pathReviews         map[string]pathReview
+	publisher           *app.PathPublisher
 	packageImporting    bool
 	pairReadLocal       func(context.Context) ([]byte, error)
 	pairLocalAddresses  func() ([]string, error)
@@ -110,6 +112,10 @@ func (a *App) beforeClose(context.Context) bool {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
+	if err := a.sourcePublisher().Close(ctx); err != nil {
+		runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{Type: runtime.ErrorDialog, Title: "等待发布停止", Message: "本机发布仍在释放文件，请稍后关闭。"})
+		return true
+	}
 	if err := a.manager.Close(ctx); err != nil {
 		runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{Type: runtime.ErrorDialog, Title: "等待任务停止", Message: "任务还在释放文件，请稍后再关闭。"})
 		return true
