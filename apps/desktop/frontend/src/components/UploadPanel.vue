@@ -124,7 +124,7 @@ async function chooseFolder() {
       <span>{{
         preparing
           ? "正在准备设备、测试连接并生成上传版本，请稍候……"
-          : "写入结束后等待接收端校验，接收端发布后才完成。"
+          : "接收端校验后发布，写入字节不等于完成。"
       }}</span
       ><button
         class="primary"

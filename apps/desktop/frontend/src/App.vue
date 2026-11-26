@@ -79,10 +79,10 @@ const titles: Record<string, string> = {
   logs: "活动记录",
 };
 const descriptions: Record<string, string> = {
-  tasks: "让文件跨越设备，让每次传输都可靠。",
-  devices: "管理已配对设备，连接前核对远端身份。",
-  diagnostics: "从网络到文件，逐层定位连接问题。",
-  logs: "查看任务状态变化，关闭后仍可追溯。",
+  tasks: "下载与上传任务，支持中断续传。",
+  devices: "已配对的可信设备。",
+  diagnostics: "逐层定位连接问题。",
+  logs: "任务状态变化记录。",
 };
 const page = ref("tasks"),
   devices = ref<Device[]>([]),
@@ -113,11 +113,13 @@ const entries = ref<{ time: string; text: string }[]>([]);
 const attention = computed(
   () => tasks.value.filter((t) => attentionStates.includes(t.state)).length,
 );
-const breadcrumb = computed(() =>
-  page.value === "tasks"
-    ? `任务 / 活动 ${active.value.length} · 待处理 ${attention.value}`
-    : `工作空间 / ${titles[page.value]}`,
-);
+const breadcrumb = computed(() => {
+  if (page.value === "tasks")
+    return `活动 ${active.value.length} · 待处理 ${attention.value}`;
+  if (page.value === "devices") return `已配对 ${devices.value.length} 台`;
+  if (page.value === "logs") return `持久记录 ${history.value.length} 条`;
+  return titles[page.value];
+});
 const active = computed(() =>
   tasks.value.filter((t) =>
     [
@@ -471,8 +473,7 @@ onUnmounted(() => {
         <Icon name="network" />网络诊断
       </button>
       <div class="side-bottom">
-        <span class="dot"></span>任务保存在本机
-        <p>跃传 HopSend</p>
+        <span class="dot"></span>本机任务存储
         <small>{{ version || "正在读取版本…" }}</small>
       </div>
     </aside>
@@ -559,7 +560,7 @@ onUnmounted(() => {
               <Icon name="upload" />上传到设备
             </button>
           </div>
-          <span>上传以接收端校验和发布结果为准</span>
+          <span>接收端校验后发布</span>
         </div>
         <UploadPanel
           ref="uploadPanel"
@@ -612,7 +613,7 @@ onUnmounted(() => {
             </div></label
           >
           <div class="create-footer">
-            <span>依清单分块 · 每节点 2 个活动块 · SHA-256</span
+            <span>SHA-256 · 分块续传</span
             ><button
               class="primary"
               @click="start"
@@ -1029,8 +1030,7 @@ onUnmounted(() => {
         </details>
       </section>
       <footer class="page-footer" :class="{ 'refresh-failed': refreshError }">
-        {{ refreshError ? "任务刷新失败" : "任务状态最近刷新" }} ·
-        {{ refreshedAt || "尚未完成" }} · 本机时间
+        {{ refreshError ? "刷新失败" : refreshedAt ? `更新于 ${refreshedAt}` : "正在加载…" }}
       </footer>
     </main>
   </div>

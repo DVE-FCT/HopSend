@@ -132,10 +132,10 @@ p {
   margin: 0;
 }
 h1 {
-  font-size: 29px;
-  letter-spacing: 0.3px;
+  font-size: 21px;
+  letter-spacing: 0;
   color: var(--heading);
-  margin: 5px 0 9px;
+  margin: 4px 0 7px;
   font-weight: 600;
 }
 h2 {
@@ -178,21 +178,21 @@ small {
 }
 .brand {
   display: flex;
-  gap: 12px;
+  gap: 11px;
   align-items: center;
-  font-size: 24px;
+  font-size: 17px;
   color: var(--side-heading);
   font-weight: 600;
-  margin: 2px 10px 48px;
-  letter-spacing: 1px;
+  margin: 2px 10px 44px;
+  letter-spacing: 0;
 }
 .brand small {
   display: block;
   color: var(--side-muted);
   font-size: 10px;
-  letter-spacing: 2.8px;
+  letter-spacing: 1px;
   font-weight: 400;
-  margin-top: 3px;
+  margin-top: 2px;
 }
 .brand-icon {
   width: 42px;
@@ -236,14 +236,16 @@ small {
 .side-bottom {
   margin: auto 10px 0;
   border-top: 1px solid var(--side-line);
-  padding-top: 20px;
+  padding-top: 16px;
   font-size: 11px;
   color: var(--side-text);
-  line-height: 2;
+  line-height: 1.7;
 }
 .side-bottom small {
   color: var(--side-muted);
   font-size: 10px;
+  display: block;
+  margin-top: 2px;
 }
 .dot {
   display: inline-block;
@@ -277,10 +279,10 @@ main {
   align-items: center;
 }
 .eyebrow {
-  font-size: 10px;
-  letter-spacing: 2.2px;
-  color: var(--accent);
-  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  color: var(--muted);
+  font-weight: 500;
 }
 .icon-button {
   padding: 10px;
@@ -290,12 +292,23 @@ main {
   color: var(--surface);
   border-color: var(--accent);
   font-weight: 600;
-  box-shadow: 0 3px 8px #087d8312;
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--accent) 25%, transparent);
+  transition:
+    background 0.14s,
+    border-color 0.14s,
+    box-shadow 0.14s,
+    transform 0.1s;
 }
-.primary:hover {
+.primary:hover:not(:disabled) {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
   color: var(--surface);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.primary:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: none;
 }
 .secondary {
   background: var(--surface);
@@ -311,7 +324,7 @@ main {
 .panel {
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 13px;
+  border-radius: 10px;
   box-shadow: var(--shadow);
 }
 .stats {
@@ -322,16 +335,26 @@ main {
 }
 .stats > div,
 .stats > button {
-  padding: 18px 20px;
+  padding: 16px 18px 16px 20px;
   border: 1px solid var(--line);
+  border-left: 3px solid var(--line);
   background: var(--surface);
   border-radius: 12px;
 }
+.stats > div:first-child {
+  border-left-color: var(--accent);
+}
+.stats > div:nth-child(2) {
+  border-left-color: var(--success);
+}
+.stats > div:nth-child(3) {
+  border-left-color: color-mix(in srgb, var(--accent) 55%, var(--muted));
+}
 .stats strong {
   display: block;
-  font-size: 28px;
+  font-size: 24px;
   color: var(--heading);
-  margin-top: 5px;
+  margin-top: 4px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -339,7 +362,7 @@ main {
   font-size: 11px;
   color: var(--muted);
   font-weight: 400;
-  margin-left: 5px;
+  margin-left: 4px;
 }
 .stats label {
   font-size: 11px;
@@ -351,9 +374,11 @@ main {
   gap: 0;
   text-align: left;
   background: var(--warning-soft);
-  border-color: color-mix(in srgb, var(--warning) 20%, var(--line));
+  border: 1px solid color-mix(in srgb, var(--warning) 20%, var(--line));
+  border-left: 3px solid var(--warning);
   font-size: 12px;
   color: var(--warning);
+  cursor: pointer;
 }
 .attention-stat strong {
   color: var(--warning);
@@ -384,21 +409,28 @@ main {
 }
 .transfer-switch {
   display: inline-flex;
-  gap: 3px;
-  padding: 4px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface);
+  gap: 0;
+  border-bottom: 2px solid var(--line);
 }
 .transfer-switch button {
   border: 0;
-  padding: 8px 17px;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  padding: 8px 16px;
   box-shadow: none;
   font-size: 12px;
   background: transparent;
+  border-radius: 0;
+  color: var(--muted);
+}
+.transfer-switch button:hover {
+  background: transparent;
+  border-bottom-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  color: var(--text);
 }
 .transfer-switch button.selected {
-  background: var(--accent-soft);
+  background: transparent;
+  border-bottom-color: var(--accent);
   color: var(--accent);
   font-weight: 600;
 }
@@ -407,7 +439,6 @@ main {
 }
 .create {
   padding: 23px 25px;
-  border-top: 3px solid var(--accent);
 }
 .create-grid {
   display: grid;
@@ -486,8 +517,8 @@ main {
 .task {
   display: flex;
   gap: 16px;
-  padding: 21px 22px;
-  margin-bottom: 12px;
+  padding: 18px 20px;
+  margin-bottom: 8px;
 }
 .file-icon {
   width: 43px;
@@ -535,16 +566,18 @@ main {
 }
 .badge {
   font-size: 11px;
-  padding: 3px 8px;
+  padding: 2px 7px;
   background: var(--accent-soft);
   color: var(--accent);
-  border-radius: 5px;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  border-radius: 4px;
   white-space: nowrap;
 }
 .badge.completed,
 .badge.ok {
   background: var(--success-soft);
   color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 22%, transparent);
 }
 .badge.paused,
 .badge.recoverable,
@@ -554,14 +587,17 @@ main {
 .badge.skipped {
   background: var(--surface-soft);
   color: var(--muted);
+  border-color: var(--line);
 }
 .badge.waiting_network {
   background: var(--warning-soft);
   color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 22%, transparent);
 }
 .badge.failed {
   background: var(--danger-soft);
   color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 22%, transparent);
 }
 .destination {
   font-size: 11px;
@@ -889,7 +925,6 @@ main {
 }
 .drop-disabled {
   --wails-drop-target: none;
-  opacity: 0.6;
 }
 .loading-state {
   display: flex;
@@ -914,10 +949,11 @@ main {
 }
 .page-footer {
   color: var(--muted);
-  text-align: center;
+  text-align: right;
   font-size: 10px;
-  margin-top: 30px;
-  letter-spacing: 0.2px;
+  margin-top: 24px;
+  letter-spacing: 0;
+  opacity: 0.6;
 }
 .diagnostic-form {
   padding: 24px;
@@ -1036,6 +1072,10 @@ main {
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  .primary:hover,
+  .primary:active {
+    transform: none;
+  }
   *,
   *::before,
   *::after {
@@ -1062,7 +1102,7 @@ main {
     padding: 16px;
   }
   .brand {
-    font-size: 22px;
+    font-size: 17px;
   }
   .task {
     padding: 18px;
