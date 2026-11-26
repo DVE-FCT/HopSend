@@ -34,6 +34,19 @@ func Publish(ctx context.Context, source, store, share string, chunkSize int64, 
 		return m, err
 	}
 	defer input.Close()
+	return PublishFile(ctx, input, name, store, share, chunkSize, payload...)
+}
+
+// PublishFile snapshots an already opened, root-constrained source. The caller
+// retains ownership of input; its offset must be zero.
+func PublishFile(ctx context.Context, input *os.File, name, store, share string, chunkSize int64, payload ...string) (v1.Manifest, error) {
+	var m v1.Manifest
+	if len(payload) > 1 || (len(payload) == 1 && payload[0] != "folder") || chunkSize < MinChunkSize || chunkSize > MaxChunkSize || !sharePattern.MatchString(share) {
+		return m, errors.New("发布参数无效")
+	}
+	if err := filesystem.SafeLeaf(name); err != nil {
+		return m, err
+	}
 	before, err := input.Stat()
 	if err != nil {
 		return m, err
