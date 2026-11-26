@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	v1 "github.com/DVE-FCT/HopSend/contracts/control/v1"
@@ -21,8 +22,16 @@ import (
 	transport "github.com/DVE-FCT/HopSend/internal/transport/sftp"
 )
 
-func UploadDestination(agentURL, share, target string) string {
-	return agentURL + "/shares/" + url.PathEscape(share) + "/" + url.PathEscape(target)
+func UploadDestination(agentURL, share, target string, parent ...string) string {
+	relative := target
+	if len(parent) > 0 && parent[0] != "" && parent[0] != "." {
+		relative = parent[0] + "/" + target
+	}
+	parts := strings.Split(relative, "/")
+	for i := range parts {
+		parts[i] = url.PathEscape(parts[i])
+	}
+	return agentURL + "/shares/" + url.PathEscape(share) + "/" + strings.Join(parts, "/")
 }
 
 func PrepareUpload(ctx context.Context, r DownloadRequest, source, target string, chunkSize int64) (DownloadRequest, error) {
@@ -40,13 +49,29 @@ func PrepareUpload(ctx context.Context, r DownloadRequest, source, target string
 	if err = filesystem.SafeLeaf(target); err != nil {
 		return r, err
 	}
+	parent, err := filesystem.UploadParent(r.UploadParentPath)
+	if err != nil {
+		return r, err
+	}
+	r.UploadParentPath = parent
+	if parent != "" {
+		client, err := nodeclient.New(r.Agent)
+		if err != nil {
+			return r, err
+		}
+		err = client.RequireUploadParent(ctx)
+		client.Close()
+		if err != nil {
+			return r, err
+		}
+	}
 	r.SnapshotDirectory = filepath.Join(filepath.Dir(absolute), "upload-content")
 	m, err := Publish(ctx, source, r.SnapshotDirectory, r.ShareID, chunkSize)
 	if err != nil {
 		return r, err
 	}
 	r.Direction, r.ManifestID, r.UploadTarget = "upload", m.ManifestID, target
-	r.Destination = UploadDestination(r.Agent.URL, r.ShareID, target)
+	r.Destination = UploadDestination(r.Agent.URL, r.ShareID, target, parent)
 	return r, nil
 }
 
@@ -96,7 +121,8 @@ func Upload(ctx context.Context, r DownloadRequest) (engine.DownloadResult, erro
 		}
 		*path = p
 	}
-	if r.Destination != UploadDestination(r.Agent.URL, r.ShareID, r.UploadTarget) || filesystem.SafeLeaf(r.UploadTarget) != nil {
+	parent, err := filesystem.UploadParent(r.UploadParentPath)
+	if err != nil || parent != r.UploadParentPath || r.Destination != UploadDestination(r.Agent.URL, r.ShareID, r.UploadTarget, parent) || filesystem.SafeLeaf(r.UploadTarget) != nil {
 		return engine.DownloadResult{}, errors.New("上传目标身份不一致")
 	}
 	if r.ReadTimeout <= 0 {
@@ -123,7 +149,7 @@ func uploadAttempt(ctx context.Context, r DownloadRequest) (engine.DownloadResul
 		return engine.DownloadResult{}, err
 	}
 	defer client.Close()
-	session, err := client.CreateUpload(ctx, v1.CreateUpload{RequestID: engine.TaskID(m.ManifestID, r.Destination), ShareID: r.ShareID, Target: r.UploadTarget, Manifest: m})
+	session, err := client.CreateUpload(ctx, v1.CreateUpload{RequestID: engine.TaskID(m.ManifestID, r.Destination), ShareID: r.ShareID, Target: r.UploadTarget, ParentPath: r.UploadParentPath, Manifest: m})
 	if err != nil {
 		return engine.DownloadResult{}, err
 	}

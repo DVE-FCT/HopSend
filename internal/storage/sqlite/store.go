@@ -17,7 +17,10 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-type Store struct{ db *sql.DB }
+type Store struct {
+	db   *sql.DB
+	path string
+}
 
 func Open(path string) (*Store, error) {
 	p, err := filepath.Abs(path)
@@ -32,7 +35,7 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	s := &Store{db: db}
+	s := &Store{db: db, path: p}
 	if err = s.initialize(); err != nil {
 		_ = db.Close()
 		return nil, err
@@ -50,29 +53,76 @@ func (s *Store) initialize() error {
 	if err := s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		return err
 	}
-	if version > 2 {
+	if version > 3 {
 		return errors.New("任务数据库版本高于当前程序支持的版本")
 	}
-	if version == 2 {
+	if version == 3 {
 		return nil
 	}
-	tx, err := s.db.Begin()
+	// VACUUM INTO obtains a consistent SQLite backup, including committed WAL
+	// data. A raw copy of a live .db file would not provide that guarantee.
+	if version > 0 {
+		empty, err := os.CreateTemp(filepath.Dir(s.path), filepath.Base(s.path)+".pre-v3-*.bak")
+		if err != nil {
+			return err
+		}
+		backup := empty.Name()
+		if err := empty.Close(); err != nil {
+			return err
+		}
+		if _, err := s.db.Exec("VACUUM INTO ?", backup); err != nil {
+			return errors.New("数据库升级前备份失败，原状态未迁移")
+		}
+		f, err := os.OpenFile(backup, os.O_RDWR, 0600)
+		if err != nil {
+			return err
+		}
+		err = f.Sync()
+		f.Close()
+		if err != nil {
+			return err
+		}
+	}
+	conn, err := s.db.Conn(context.Background())
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer conn.Close()
+	if _, err = conn.ExecContext(context.Background(), "BEGIN IMMEDIATE"); err != nil {
+		return err
+	}
+	defer conn.ExecContext(context.Background(), "ROLLBACK")
+	if err = conn.QueryRowContext(context.Background(), "PRAGMA user_version").Scan(&version); err != nil {
+		return err
+	}
+	if version == 3 {
+		_, err = conn.ExecContext(context.Background(), "COMMIT")
+		return err
+	}
+	if version > 3 {
+		return errors.New("并发升级后的数据库版本不受支持")
+	}
 	for _, statement := range []string{
 		`CREATE TABLE IF NOT EXISTS tasks(id TEXT PRIMARY KEY, manifest TEXT NOT NULL, remote_path TEXT NOT NULL, destination TEXT NOT NULL, staging TEXT NOT NULL, state TEXT NOT NULL, source TEXT NOT NULL, updated_at TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS chunks(task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE, chunk_index INTEGER NOT NULL, PRIMARY KEY(task_id,chunk_index))`,
 		`CREATE TABLE IF NOT EXISTS uploads(id TEXT PRIMARY KEY,owner_id TEXT NOT NULL,request_id TEXT NOT NULL,share_id TEXT NOT NULL,target TEXT NOT NULL,manifest TEXT NOT NULL,staging TEXT NOT NULL,sftp_path TEXT NOT NULL,state TEXT NOT NULL,updated_at TEXT NOT NULL,UNIQUE(owner_id,request_id))`,
 		`CREATE TABLE IF NOT EXISTS upload_chunks(upload_id TEXT NOT NULL REFERENCES uploads(id) ON DELETE CASCADE,chunk_index INTEGER NOT NULL,PRIMARY KEY(upload_id,chunk_index))`,
-		`PRAGMA user_version=2`,
 	} {
-		if _, err = tx.Exec(statement); err != nil {
+		if _, err = conn.ExecContext(context.Background(), statement); err != nil {
 			return err
 		}
 	}
-	return tx.Commit()
+	for _, statement := range []string{
+		`ALTER TABLE uploads ADD COLUMN parent_path TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE uploads ADD COLUMN parent_identity TEXT NOT NULL DEFAULT ''`,
+		`PRAGMA user_version=3`,
+	} {
+		if _, err = conn.ExecContext(context.Background(), statement); err != nil {
+			return err
+		}
+	}
+	_, err = conn.ExecContext(context.Background(), "COMMIT")
+	return err
 }
 
 func (s *Store) Close() error { return s.db.Close() }

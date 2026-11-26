@@ -27,6 +27,7 @@ func runUpload(ctx context.Context, args []string, out, stderr io.Writer) int {
 	share := f.String("share", "inbox", "获上传授权的共享 ID")
 	source := f.String("source", "", "本机源文件")
 	target := f.String("target", "", "远端单级文件名，留空沿用源文件名")
+	parent := f.String("parent-path", "", "接收共享内已有相对父目录，默认共享根")
 	database := f.String("database", app.DefaultDatabase(), "SQLite 任务数据库")
 	workers := f.Int("workers", 2, "活动分块数")
 	chunk := f.Int64("chunk-mib", 32, "逻辑块 MiB，1–64")
@@ -37,6 +38,7 @@ func runUpload(ctx context.Context, args []string, out, stderr io.Writer) int {
 		return 2
 	}
 	r := app.DownloadRequest{Agent: nodeclient.Config{URL: *url, CACertificate: *ca, TokenFile: *token}, SSH: transport.Config{Address: *address, User: *user, PrivateKeyPath: *key, KnownHostsPath: *known}, ShareID: *share, Database: *database, Workers: *workers, Retries: *retries, ReadTimeout: *timeout}
+	r.UploadParentPath = *parent
 	var err error
 	r, err = app.PrepareUpload(ctx, r, *source, *target, *chunk<<20)
 	if err != nil {

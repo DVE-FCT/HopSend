@@ -202,7 +202,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 			operations = append(operations, "published_manifest", "published_path_index")
 		}
 		if s.uploadStore != nil {
-			operations = append(operations, "create_upload", "upload_status", "confirm_upload_chunk", "finalize_upload")
+			operations = append(operations, "create_upload", "upload_status", "confirm_upload_chunk", "finalize_upload", "upload_parent_path")
 		}
 		send(w, 200, v1.Capabilities{APIVersion: "v1", Operations: operations, DataTransport: "external_sftp", UploadSupported: s.uploadStore != nil})
 	case "/v1/shares":

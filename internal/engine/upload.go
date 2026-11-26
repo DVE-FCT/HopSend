@@ -42,7 +42,7 @@ type UploadOptions struct {
 }
 
 func validateUploadSession(m manifestv1.Manifest, expected, actual v1.UploadSession) error {
-	if actual.ID != expected.ID || actual.RequestID != expected.RequestID || actual.Target != expected.Target || actual.ShareID != m.ShareID || actual.ManifestID != m.ManifestID || actual.SFTPPath != expected.SFTPPath {
+	if actual.ID != expected.ID || actual.RequestID != expected.RequestID || actual.Target != expected.Target || actual.ParentPath != expected.ParentPath || actual.ShareID != m.ShareID || actual.ManifestID != m.ManifestID || actual.SFTPPath != expected.SFTPPath {
 		return errors.New("上传会话身份或内容版本变化")
 	}
 	seen := map[int]bool{}

@@ -8,6 +8,14 @@ const page=(entries,{share='files',path='.',next=''}={})=>({share_id:share,path,
 const success=(p)=>({page:p,observed_at:stamp});
 const shares=(items=[{id:'files',access:'read_only'}])=>({shares:items,observed_at:stamp});
 
+test('explicit upload share never silently falls back to another readable share',async()=>{
+ const state=newBrowserState();let calls=0;
+ const browser=createRemoteBrowser(state,{BrowseDeviceShares:async()=>shares([{id:'write',access:'write_only'},{id:'rw',access:'read_write'}]),BrowseDeviceEntries:async()=>{calls++;return success(page([],{share:'rw'}));}});
+ await browser.device('d','write',true);assert.equal(state.share,'write');assert.equal(calls,0);assert.equal(state.error.code,'browse_denied');
+ await browser.device('d','unknown',true);assert.equal(calls,0);assert.equal(state.loaded,false);assert.equal(state.share,'');
+ await browser.device('d','rw',true);assert.equal(calls,1);assert.equal(state.share,'rw');assert.equal(state.loaded,true);
+});
+
 test('1005 entries are traversed without duplicates and exact name order, including empty directories',async()=>{
  const state=newBrowserState();let calls=0;
  const browser=createRemoteBrowser(state,{
