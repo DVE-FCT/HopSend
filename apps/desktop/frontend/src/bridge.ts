@@ -30,6 +30,10 @@ export interface RemotePage {share_id: string; path: string; entries: RemoteEntr
 export interface BrowseError {code: string; message: string}
 export interface BrowseSharesResult {shares: RemoteShare[]; observed_at: string; error?: BrowseError}
 export interface BrowsePageResult {page?: RemotePage; observed_at: string; error?: BrowseError}
+export interface PathVersion {share_id:string;path:string;manifest_id:string;content_id:string;name:string;size_bytes:number;payload_kind:'file'|'folder';published_at:string}
+export interface PathSelection {review_id:string;version?:PathVersion;error?:BrowseError}
+export interface PublicationConfig {revision:string;shares:{id:string;path:string}[]}
+export interface PublicationJob {id:string;state:string;path:string;error?:string;version?:PathVersion}
 export interface Task {
   direction: string;
   id: string;
@@ -64,6 +68,14 @@ export type TaskEvent = Pick<
   "task_id" | "state" | "error" | "updated_at"
 >;
 interface API {
+  InspectPublishedPath(id:string,share:string,path:string):Promise<PathSelection>;
+  StartPublishedDownload(review:string,destination:string):Promise<string>;
+  ReleasePublishedPath(review:string):Promise<void>;
+  ReadPublicationConfig(path:string):Promise<PublicationConfig>;
+  PickPublicationSource(config:string,revision:string,share:string,folder:boolean):Promise<string>;
+  StartPathPublication(config:string,revision:string,share:string,path:string):Promise<PublicationJob>;
+  PathPublicationStatus():Promise<PublicationJob>;
+  CancelPathPublication(id:string):Promise<void>;
   BrowseDeviceShares(id: string): Promise<BrowseSharesResult>;
   BrowseDeviceEntries(id: string, share: string, path: string, cursor: string, limit: number): Promise<BrowsePageResult>;
   CreatePairRequest(existingDevice:string): Promise<{request_file:string;request:{request_id:string}}> ;

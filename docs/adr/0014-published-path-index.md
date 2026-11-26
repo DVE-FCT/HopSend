@@ -2,7 +2,7 @@
 
 - 日期：2026-11-26
 - 阶段：P2.16a（协议/源端核心），P2.16b（桌面闭环）
-- 状态：实施中；完成范围以阶段验收记录为准
+- 状态：已实现；自动化、本机真实协议及待现场范围分别见 [P2.16a](../validation/P2.16a-published-path-index.md)和 [P2.16b](../validation/P2.16b-path-download.md)
 
 ## 决定
 
