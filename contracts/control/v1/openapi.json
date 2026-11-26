@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "HopSend Agent 控制接口",
-    "version": "0.3.0",
-    "description": "受认证的 HTTPS 控制面，提供健康、能力、授权目录和已发布不可变文件清单。目录支持稳定名称排序分页；文件字节通过独立 SFTP 传输。"
+    "version": "0.4.0",
+    "description": "受认证的 HTTPS 控制面，提供健康、能力、授权目录、已发布路径版本和不可变文件清单。目录支持稳定名称排序分页；文件字节通过独立 SFTP 传输。"
   },
   "servers": [
     {
@@ -690,6 +690,85 @@
           }
         }
       }
+    },
+    "/v1/shares/{share_id}/index": {
+      "get": {
+        "operationId": "publishedPathIndex",
+        "summary": "读取授权共享内最后一次显式发布的不可变版本",
+        "description": "path 是共享内规范相对路径。查询不复制或哈希实时源文件；未显式发布返回 path_unpublished。返回的 manifest_id 固定对应已发布快照，源文件后来变化不会悄悄切换版本。",
+        "parameters": [
+          {
+            "name": "share_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "共享内相对文件或文件夹路径；不接受绝对路径、..、反斜线、冒号或链接"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "已发布路径版本",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PathVersion"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "路径无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "凭据缺失或无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "共享未授权或路径尚未发布（path_unpublished）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "索引、清单或内容对象不可用（index_stale）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1055,6 +1134,54 @@
           },
           "manifest": {
             "$ref": "#/components/schemas/Manifest"
+          }
+        }
+      },
+      "PathVersion": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "share_id",
+          "path",
+          "manifest_id",
+          "content_id",
+          "name",
+          "size_bytes",
+          "payload_kind",
+          "published_at"
+        ],
+        "properties": {
+          "share_id": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "manifest_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "content_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "name": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "payload_kind": {
+            "type": "string",
+            "enum": [
+              "file",
+              "folder"
+            ]
+          },
+          "published_at": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       }

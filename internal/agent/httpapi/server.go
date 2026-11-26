@@ -199,7 +199,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	case "/v1/capabilities":
 		operations := []string{"health", "capabilities", "shares", "list_entries", "list_entries_paginated"}
 		if s.contentRoot != nil {
-			operations = append(operations, "published_manifest")
+			operations = append(operations, "published_manifest", "published_path_index")
 		}
 		if s.uploadStore != nil {
 			operations = append(operations, "create_upload", "upload_status", "confirm_upload_chunk", "finalize_upload")
@@ -228,6 +228,10 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		send(w, 200, v1.ShareList{Shares: items})
 	default:
 		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+		if len(parts) == 4 && parts[0] == "v1" && parts[1] == "shares" && parts[3] == "index" && r.URL.Path == "/"+strings.Join(parts, "/") {
+			s.pathIndex(w, r, p, parts[2])
+			return
+		}
 		if len(parts) == 5 && parts[0] == "v1" && parts[1] == "shares" && parts[3] == "manifests" && r.URL.Path == "/"+strings.Join(parts, "/") {
 			id := parts[2]
 			if !p.shares[id] || s.contentRoot == nil {

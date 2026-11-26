@@ -127,7 +127,13 @@ func Create(ctx context.Context, source, output string) (index Index, returnedEr
 		return index, err
 	}
 	defer root.Close()
-	index, err = scan(root)
+	return CreateRoot(ctx, root, output)
+}
+
+// CreateRoot packages an already opened root without resolving its original
+// pathname again. The caller retains ownership of root.
+func CreateRoot(ctx context.Context, root *os.Root, output string) (index Index, returnedErr error) {
+	index, err := scan(root)
 	if err != nil {
 		return index, err
 	}
