@@ -2,11 +2,32 @@ package filesystem
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"unicode/utf16"
 )
+
+// UploadParent canonicalizes the shared-root default while applying portable
+// Windows rules to every non-root directory component.
+func UploadParent(value string) (string, error) {
+	if value == "" || value == "." {
+		return "", nil
+	}
+	if len(value) > 4096 || !fs.ValidPath(value) || strings.Contains(value, `\`) {
+		return "", errors.New("上传父目录必须为共享内规范相对路径")
+	}
+	for _, part := range strings.Split(value, "/") {
+		if err := SafeLeaf(part); err != nil {
+			return "", err
+		}
+		if strings.EqualFold(part, ".hopsend-uploads") {
+			return "", errors.New("不能将会话暂存区作为上传目录")
+		}
+	}
+	return value, nil
+}
 
 // SafeLeaf uses Windows rules on every platform so manifests are portable.
 func SafeLeaf(name string) error {

@@ -32,4 +32,4 @@ App 只传 Agent HTTPS 配置给共享应用层，不传 SSH、管理脚本或�
 
 此阶段未改变 Agent 协议：共享枚举不是事务快照；列表元数据不能证明文件内容未变。每页仍有 Agent 的扫描/排序成本。100000 项为有界限制，实际测试规模为 1005 个文件加一个子目录；没有宣称超大目录渲染性能或其他系统支持已通过。
 
-上传目标目录选择属于 P2.17；当前 Target 的单层名称限制保持。验收见 [P2.15](validation/P2.15-remote-browser.md)，后续依赖见 [实施计划](23-next-stage-plan.md)。
+P2.17 已复用本组件提供[上传父目录选择](26-upload-destination.md)，Target 仍是单层名称，parent_path 单独绑定；只写共享不能读取目录。浏览基线验收见 [P2.15](validation/P2.15-remote-browser.md)，后续依赖见 [实施计划](23-next-stage-plan.md)。

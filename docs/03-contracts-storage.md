@@ -50,8 +50,8 @@ POST /v1/uploads/{upload_id}/finalize
 Agent 与桌面进程使用各自的数据库文件。共用迁移基础设施时，按角色明确 schema 范围，防止服务和 UI 进程同时争用一个业务库。
 开启适当 WAL/事务策略，使用受控写入路径聚合提交。WAL 不替代文件数据 Sync。
 
-以上实体表是整体规划。P1.2 当前实际 schema 为 tasks（完整 manifest、源配置引用、路径、状态和更新时间）与 chunks（任务和已确认块索引）；块偏移、长度及哈希来自任务保存的原 manifest，避免出现两份不一致元数据。
-其余节点、目录、上传和设置实体仍按阶段实施，详见 [ADR 0003](adr/0003-durable-download-journal.md)。
+以上实体表是整体规划。实际 schema v3 包含 tasks、chunks、uploads 和 upload_chunks：下载保留完整 manifest、源引用、路径/状态及确认块；上传记录父目录及共享根/父目录身份、暂存和接收端确认。块范围和哈希来自原 manifest，不建立两份不一致元数据。v1/v2 升级先一致备份，旧会话不补造身份，详见 [ADR 0015](adr/0015-upload-parent-binding.md)。
+其他节点、设置和未来调度实体仍按阶段实施。
 
 ## 5. UI 事件与状态
 

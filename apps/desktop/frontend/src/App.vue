@@ -567,6 +567,7 @@ onUnmounted(() => {
         <RemoteBrowser v-if="transferMode==='download'" :devices="devices" :device-id="selected" @device="selected=$event" @diagnose="diagnose" @created="id=>{notice='已按选定快照创建下载任务';log(`创建路径下载任务：${id.slice(0,12)}`);void refresh();}" />
         <UploadPanel
           ref="uploadPanel"
+          @diagnose="diagnose"
           v-if="transferMode === 'upload'"
           :devices="devices"
           @started="
@@ -647,7 +648,7 @@ onUnmounted(() => {
         <div v-if="!tasks.length" class="empty panel">
           <Icon name="download" />
           <h3>还没有传输任务</h3>
-          <p>配对设备后，浏览共享目录并选择已发布版本；也可使用已有清单 ID。</p>
+          <p>{{transferMode==='upload'?'选择接收设备、共享父目录和本机内容，接收端校验后发布。':'配对设备后，浏览共享目录并选择已发布版本；也可使用已有清单 ID。'}}</p>
           <button class="secondary" @click="edit()">添加设备</button>
         </div>
         <div v-if="tasks.length" class="filters" aria-label="任务筛选">

@@ -21,6 +21,7 @@ type DownloadRequest struct {
 	ManagedAgentBinary               string
 	SnapshotDirectory                string
 	UploadTarget                     string
+	UploadParentPath                 string
 	Agent                            nodeclient.Config
 	SSH                              transport.Config
 	ShareID, ManifestID, Destination string

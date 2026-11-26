@@ -101,6 +101,7 @@ interface API {
     source: string,
     target: string,
   ): Promise<string>;
+  StartUploadTo(device:string,share:string,source:string,target:string,parent:string):Promise<string>;
   Devices(): Promise<Device[]>;
   SaveDevice(d: Device): Promise<Device>;
   ImportDevice(): Promise<Device>;

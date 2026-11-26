@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -52,6 +53,20 @@ func (s *Server) uploadAPI(w http.ResponseWriter, r *http.Request, p *principal)
 		return
 	}
 	root := s.roots[record.ShareID]
+	if record.ParentIdentity == "" {
+		fail(w, 409, "upload_parent_unbound", "旧会话未记录目录身份，请核对接收端后使用新目标重建任务")
+		return
+	}
+	_, releaseParent, err := leaseUploadParent(root, record.ParentPath, record.ParentIdentity)
+	if err != nil {
+		fail(w, 409, "upload_parent_changed", "上传父目录已删除、替换、链接或无法验证")
+		return
+	}
+	defer releaseParent()
+	if err := filesystem.CheckComponents(filepath.Join(root.Name(), record.Staging)); err != nil {
+		fail(w, 409, "staging_unavailable", "暂存路径经过链接或不可访问")
+		return
+	}
 	value, _ := s.uploadLocks.LoadOrStore(record.ID, &sync.Mutex{})
 	mutex := value.(*sync.Mutex)
 	mutex.Lock()
@@ -112,17 +127,37 @@ func (s *Server) createUpload(w http.ResponseWriter, r *http.Request, p *princip
 		fail(w, 400, "invalid_upload", "清单、请求 ID 或目标文件名无效")
 		return
 	}
+	parent, err := filesystem.UploadParent(request.ParentPath)
+	if err != nil || strings.EqualFold(request.Target, ".hopsend-uploads") {
+		fail(w, 400, "invalid_parent_path", "上传父目录或名称无效")
+		return
+	}
+	request.ParentPath = parent
 	root := s.roots[request.ShareID]
 	if root == nil || !s.writable[request.ShareID] || !p.uploadShares[request.ShareID] {
 		fail(w, 403, "upload_denied", "未获此共享的上传授权")
 		return
 	}
+	parentIdentity, releaseParent, err := leaseUploadParent(root, parent, "")
+	if err != nil {
+		fail(w, 409, "upload_parent_unavailable", "上传父目录不存在、被占用或经过链接，请先由接收端确认目录")
+		return
+	}
+	defer releaseParent()
 	s.uploadCreateMu.Lock()
 	defer s.uploadCreateMu.Unlock()
 	existing, err := s.uploadStore.FindUpload(r.Context(), p.id, request.RequestID)
 	if err == nil {
-		if existing.ManifestID != request.Manifest.ManifestID || existing.ShareID != request.ShareID || existing.Target != request.Target {
+		if existing.ManifestID != request.Manifest.ManifestID || existing.ShareID != request.ShareID || existing.Target != request.Target || existing.ParentPath != parent {
 			fail(w, 409, "request_conflict", "请求 ID 已绑定其他内容")
+			return
+		}
+		if existing.ParentIdentity == "" {
+			fail(w, 409, "upload_parent_unbound", "旧会话缺少目录身份，请核对接收端后使用新目标重建任务")
+			return
+		}
+		if existing.ParentIdentity != parentIdentity {
+			fail(w, 409, "upload_parent_changed", "上传父目录身份改变，拒绝重取旧会话")
 			return
 		}
 		if existing.State != "completed" && existing.State != "publishing" {
@@ -137,7 +172,7 @@ func (s *Server) createUpload(w http.ResponseWriter, r *http.Request, p *princip
 		fail(w, 500, "state_unavailable", "会话状态不可用")
 		return
 	}
-	if _, err = root.Lstat(request.Target); !os.IsNotExist(err) {
+	if _, err = root.Lstat(path.Join(parent, request.Target)); !os.IsNotExist(err) {
 		fail(w, 409, "target_exists", "目标已存在或不可访问，不会覆盖")
 		return
 	}
@@ -161,7 +196,7 @@ func (s *Server) createUpload(w http.ResponseWriter, r *http.Request, p *princip
 	if !strings.HasPrefix(sftpPath, "/") {
 		sftpPath = "/" + sftpPath
 	}
-	record, err := s.uploadStore.CreateUpload(r.Context(), p.id, request, id, staging, sftpPath)
+	record, err := s.uploadStore.CreateUpload(r.Context(), p.id, request, id, staging, sftpPath, parentIdentity)
 	if err != nil {
 		fail(w, 500, "state_unavailable", "无法保存会话")
 		return
@@ -178,11 +213,14 @@ func (s *Server) createUpload(w http.ResponseWriter, r *http.Request, p *princip
 }
 
 func (s *Server) ensureUploadFile(r sqlite.UploadRecord, root *os.Root) error {
+	if err := filesystem.CheckComponents(filepath.Join(root.Name(), r.Staging)); err != nil {
+		return err
+	}
 	if err := root.MkdirAll(filepath.Dir(r.Staging), 0700); err != nil {
 		return err
 	}
 	if info, err := root.Lstat(r.Staging); err == nil {
-		if !info.Mode().IsRegular() {
+		if !info.Mode().IsRegular() || filesystem.IsReparse(info) {
 			return errors.New("暂存路径不是常规文件")
 		}
 		return nil
@@ -204,7 +242,7 @@ func (s *Server) reconcilePublished(ctx context.Context, r sqlite.UploadRecord, 
 	if r.State != "completed" && r.State != "publishing" {
 		return r, false, nil
 	}
-	info, err := root.Lstat(r.Target)
+	info, err := root.Lstat(uploadTarget(r))
 	if os.IsNotExist(err) && r.State == "publishing" {
 		return r, false, nil
 	}
@@ -215,7 +253,7 @@ func (s *Server) reconcilePublished(ctx context.Context, r sqlite.UploadRecord, 
 		if _, e := root.Lstat(r.Staging + ".folder"); !os.IsNotExist(e) {
 			return r, false, errors.New("正式与展开暂存目录同时存在，不能冒认")
 		}
-		if err = folder.VerifyContent(ctx, filepath.Join(root.Name(), r.Staging), filepath.Join(root.Name(), r.Target), r.Manifest.ContentID); err != nil {
+		if err = folder.VerifyContent(ctx, filepath.Join(root.Name(), r.Staging), filepath.Join(root.Name(), uploadTarget(r)), r.Manifest.ContentID); err != nil {
 			return r, false, err
 		}
 		if err = s.uploadStore.SetUploadState(ctx, r.ID, "completed"); err != nil {
@@ -234,7 +272,7 @@ func (s *Server) reconcilePublished(ctx context.Context, r sqlite.UploadRecord, 
 	if stageErr != nil && !os.IsNotExist(stageErr) {
 		return r, false, errors.New("无法确认发布边界")
 	}
-	f, err := root.Open(r.Target)
+	f, err := root.Open(uploadTarget(r))
 	if err != nil {
 		return r, false, errors.New("正式文件不可读取")
 	}
@@ -350,7 +388,7 @@ func (s *Server) finalizeUpload(ctx context.Context, r sqlite.UploadRecord, root
 		return r, err
 	}
 	if r.Manifest.PayloadKind == "folder" {
-		if err = folder.Publish(ctx, filepath.Join(root.Name(), r.Staging), filepath.Join(root.Name(), r.Target)); err != nil {
+		if err = folder.Publish(ctx, filepath.Join(root.Name(), r.Staging), filepath.Join(root.Name(), uploadTarget(r))); err != nil {
 			return r, err
 		}
 		if err = s.uploadStore.SetUploadState(ctx, r.ID, "completed"); err != nil {
@@ -361,7 +399,7 @@ func (s *Server) finalizeUpload(ctx context.Context, r sqlite.UploadRecord, root
 	}
 	// Root.Link atomically refuses an existing target and confines resolution to
 	// the authorized share even if a directory entry is replaced concurrently.
-	if err = root.Link(r.Staging, r.Target); err != nil {
+	if err = root.Link(r.Staging, uploadTarget(r)); err != nil {
 		return r, fmt.Errorf("接收端禁止覆盖发布失败: %w", errors.New("目标已存在或文件系统不支持安全发布"))
 	}
 	if err = root.Remove(r.Staging); err != nil {

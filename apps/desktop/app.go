@@ -15,6 +15,7 @@ import (
 
 	"github.com/DVE-FCT/HopSend/internal/app"
 	"github.com/DVE-FCT/HopSend/internal/engine"
+	"github.com/DVE-FCT/HopSend/internal/filesystem"
 	"github.com/DVE-FCT/HopSend/internal/nodeclient"
 	"github.com/DVE-FCT/HopSend/internal/remoteagent"
 	"github.com/DVE-FCT/HopSend/internal/storage/sqlite"
@@ -294,7 +295,19 @@ func (a *App) StartDownload(deviceID, manifestID, destination string) (string, e
 }
 
 func (a *App) StartUpload(deviceID, shareID, source, target string) (string, error) {
+	return a.startUpload(deviceID, shareID, source, target, "")
+}
+
+func (a *App) StartUploadTo(deviceID, shareID, source, target, parent string) (string, error) {
+	return a.startUpload(deviceID, shareID, source, target, parent)
+}
+
+func (a *App) startUpload(deviceID, shareID, source, target, parent string) (string, error) {
 	if err := a.Ready(); err != nil {
+		return "", err
+	}
+	parent, err := filesystem.UploadParent(parent)
+	if err != nil {
 		return "", err
 	}
 	d, err := a.findDevice(deviceID)
@@ -308,6 +321,7 @@ func (a *App) StartUpload(deviceID, shareID, source, target string) (string, err
 		}
 	}
 	r.Database, r.ShareID = a.database, shareID
+	r.UploadParentPath = parent
 	r, err = app.PrepareUpload(a.ctx, r, source, target, 32<<20)
 	if err != nil {
 		return "", err

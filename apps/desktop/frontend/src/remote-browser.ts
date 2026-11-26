@@ -67,7 +67,7 @@ export function createRemoteBrowser(state: RemoteBrowserState, api: BrowserAPI) 
     finally{if(current(epoch))state.busy=false;}
   }
   return {
-    async device(id:string,preferredShare=''){
+    async device(id:string,preferredShare='',requirePreferred=false){
       const epoch=++generation;
       Object.assign(state,newBrowserState(),{device:id});
       if(!id||disposed)return;
@@ -83,9 +83,9 @@ export function createRemoteBrowser(state: RemoteBrowserState, api: BrowserAPI) 
           seen.add(share.id);
         }
         state.shares=value.shares;
-        const share=value.shares.find(s=>s.id===preferredShare&&readable(s))||value.shares.find(readable);
-        state.share=share?.id||value.shares[0]?.id||'';
-        if(!share){state.error={code:'browse_denied',message:value.shares.length?'当前共享只有上传权限，不能读取目录。':'当前设备没有授权共享。'};return;}
+        const share=requirePreferred?value.shares.find(s=>s.id===preferredShare):value.shares.find(s=>s.id===preferredShare&&readable(s))||value.shares.find(readable);
+        state.share=share?.id||(requirePreferred?'':value.shares[0]?.id||'');
+        if(!share||!readable(share)){state.error={code:'browse_denied',message:share?.access==='write_only'?'当前共享只有上传权限，不能读取目录。':requirePreferred?'请选择已获读写授权的共享；只写共享请手动输入相对父目录。':value.shares.length?'当前共享只有上传权限，不能读取目录。':'当前设备没有授权共享。'};return;}
         await page(epoch);
       }catch(error){if(current(epoch))failed({code:'browse_failed',message:String(error)});}
       finally{if(current(epoch))state.busy=false;}

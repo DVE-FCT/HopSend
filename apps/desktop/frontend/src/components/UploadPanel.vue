@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { ref, watchEffect } from "vue";
+import { ref, watch, watchEffect } from "vue";
 import { backend, type Device } from "../bridge";
 import Icon from "./Icon.vue";
+import RemoteBrowser from "./RemoteBrowser.vue";
 const props = defineProps<{ devices: Device[] }>();
-const emit = defineEmits<{ started: [id: string] }>();
+const emit = defineEmits<{ started: [id: string];diagnose:[id:string] }>();
 const device = ref(""),
   share = ref("inbox"),
   source = ref(""),
   target = ref(""),
+  parent = ref(""),
   busy = ref(false),
   error = ref(""),
   dropNotice = ref(""),
@@ -23,6 +25,7 @@ defineExpose({selectDropped});
 watchEffect(() => {
   if (!device.value) device.value = props.devices[0]?.id || "";
 });
+watch([device,share],()=>{parent.value='';});
 async function choose() {
   try {
     const path = await backend().PickFile("选择要上传的本机文件");
@@ -37,11 +40,12 @@ async function start() {
   error.value = "";
   preparing.value = true;
   try {
-    const id = await backend().StartUpload(
+    const id = await backend().StartUploadTo(
       device.value,
       share.value,
       source.value,
       target.value,
+      parent.value,
     );
     emit("started", id);
   } catch (e) {
@@ -101,6 +105,8 @@ async function chooseFolder() {
           placeholder="需具备上传权限，例如 inbox"
       /></label>
     </div>
+    <label>接收父目录（共享内）<input v-model="parent" :disabled="busy" aria-label="接收父目录" placeholder="留空为共享根，例如 项目/资料；目录需已存在"></label>
+    <RemoteBrowser v-if="!busy" :devices="devices" :device-id="device" purpose="upload-directory" :preferred-share="share" @device="device=$event" @share="share=$event" @directory="value=>{share=value.share;parent=value.path;}" @diagnose="emit('diagnose',$event)" />
     <label
       >本机文件或文件夹
       <div class="path-input">
