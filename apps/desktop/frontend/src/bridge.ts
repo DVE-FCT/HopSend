@@ -24,6 +24,12 @@ export interface DeviceObservation {
   detail: string;
   agent_version?: string;
 }
+export interface RemoteShare {id: string; access: 'read_only'|'read_write'|'write_only'}
+export interface RemoteEntry {name: string; directory: boolean; size_bytes: number}
+export interface RemotePage {share_id: string; path: string; entries: RemoteEntry[]; next_cursor: string; has_more: boolean}
+export interface BrowseError {code: string; message: string}
+export interface BrowseSharesResult {shares: RemoteShare[]; observed_at: string; error?: BrowseError}
+export interface BrowsePageResult {page?: RemotePage; observed_at: string; error?: BrowseError}
 export interface Task {
   direction: string;
   id: string;
@@ -58,6 +64,8 @@ export type TaskEvent = Pick<
   "task_id" | "state" | "error" | "updated_at"
 >;
 interface API {
+  BrowseDeviceShares(id: string): Promise<BrowseSharesResult>;
+  BrowseDeviceEntries(id: string, share: string, path: string, cursor: string, limit: number): Promise<BrowsePageResult>;
   CreatePairRequest(existingDevice:string): Promise<{request_file:string;request:{request_id:string}}> ;
   PickPairPackage(): Promise<string>;
 

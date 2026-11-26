@@ -20,6 +20,7 @@ import UploadPanel from "./components/UploadPanel.vue";
 import DiagnosticPanel from "./components/DiagnosticPanel.vue";
 import Icon from "./components/Icon.vue";
 import PairingWizard from "./components/PairingWizard.vue";
+import RemoteBrowser from "./components/RemoteBrowser.vue";
 import {classifyDroppedFiles} from "./package-flow";
 import {createHealthMonitor,type PairCompletion} from "./pairing-lifecycle";
 const transferMode = ref("download");
@@ -562,6 +563,7 @@ onUnmounted(() => {
           </div>
           <span>接收端校验后发布</span>
         </div>
+        <RemoteBrowser v-if="transferMode==='download'" :devices="devices" :device-id="selected" @device="selected=$event" @diagnose="diagnose" />
         <UploadPanel
           ref="uploadPanel"
           v-if="transferMode === 'upload'"
