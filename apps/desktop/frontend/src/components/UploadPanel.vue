@@ -3,6 +3,8 @@ import { ref, watch, watchEffect } from "vue";
 import { backend, type Device } from "../bridge";
 import Icon from "./Icon.vue";
 import RemoteBrowser from "./RemoteBrowser.vue";
+import BatchUploadPanel from './BatchUploadPanel.vue';
+const multiple=ref(false),batchPanel=ref<InstanceType<typeof BatchUploadPanel>>();
 const props = defineProps<{ devices: Device[] }>();
 const emit = defineEmits<{ started: [id: string];diagnose:[id:string] }>();
 const device = ref(""),
@@ -15,6 +17,7 @@ const device = ref(""),
   dropNotice = ref(""),
   preparing = ref(false);
 function selectDropped(paths: string[]) {
+  if(multiple.value){batchPanel.value?.selectDropped(paths);return;}
   if (busy.value) { dropNotice.value = "正在处理上传，请完成后再选择其他内容。"; return; }
   if (paths.length !== 1) { error.value = "每次添加一个文件或文件夹；多个文件可先放入一个文件夹。"; return; }
   source.value = paths[0] || "";
@@ -65,7 +68,9 @@ async function chooseFolder() {
 }
 </script>
 <template>
-  <section class="panel create" :aria-busy="busy">
+  <div class="segmented batch-mode" aria-label="上传方式"><button :class="{selected:!multiple}" :disabled="busy" @click="multiple=false">单设备上传</button><button :class="{selected:multiple}" :disabled="busy" @click="multiple=true">一发多收</button></div>
+  <BatchUploadPanel v-show="multiple" ref="batchPanel" :devices="devices" @started="emit('started',$event)" @diagnose="emit('diagnose',$event)" />
+  <section v-show="!multiple" class="panel create" :aria-busy="busy">
     <div class="section-title">
       <h2>新建上传</h2>
       <span>接收端确认分块与最终发布</span>

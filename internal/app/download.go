@@ -22,6 +22,8 @@ type DownloadRequest struct {
 	SnapshotDirectory                string
 	UploadTarget                     string
 	UploadParentPath                 string
+	UploadManifestScope              string
+	BatchID                          string
 	Agent                            nodeclient.Config
 	SSH                              transport.Config
 	ShareID, ManifestID, Destination string

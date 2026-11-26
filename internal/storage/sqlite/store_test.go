@@ -28,7 +28,7 @@ func TestMigrationDurabilityAndUnsupportedVersion(t *testing.T) {
 	if err = s.db.QueryRow("PRAGMA foreign_keys").Scan(&foreign); err != nil {
 		t.Fatal(err)
 	}
-	if version != 3 || synchronous != 2 || mode != "wal" || foreign != 1 {
+	if version != 4 || synchronous != 2 || mode != "wal" || foreign != 1 {
 		t.Fatal(version, synchronous, mode, foreign)
 	}
 	if err = s.SetState(context.Background(), "absent", "completed"); err == nil {
@@ -99,7 +99,7 @@ func TestConcurrentVersionTwoOpenMigratesOnce(t *testing.T) {
 		}
 	}
 	var version int
-	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 3 {
+	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 4 {
 		t.Fatal(version, err)
 	}
 }
@@ -138,7 +138,7 @@ func TestVersionOneMigrationKeepsExistingDownloadRows(t *testing.T) {
 	if err = s.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if state != "paused" || updated != "original-time" || index != 7 || version != 3 {
+	if state != "paused" || updated != "original-time" || index != 7 || version != 4 {
 		t.Fatal("migration changed existing recovery data", state, updated, index, version)
 	}
 }
@@ -172,7 +172,7 @@ func TestVersionTwoUploadMigrationPreservesRowsWithoutInventingParentTrust(t *te
 	if parent != "" || identity != "" || state != "uploading" || stamp != "old-time" {
 		t.Fatal("legacy row changed or implicit trust created", parent, identity, state, stamp)
 	}
-	backups, err := filepath.Glob(path + ".pre-v3-*.bak")
+	backups, err := filepath.Glob(path + ".pre-v4-*.bak")
 	if err != nil || len(backups) != 1 {
 		t.Fatal("missing consistent pre-upgrade backup", backups, err)
 	}
@@ -187,5 +187,49 @@ func TestVersionTwoUploadMigrationPreservesRowsWithoutInventingParentTrust(t *te
 	}
 	if err := backup.QueryRow("SELECT state FROM uploads WHERE id='old'").Scan(&state); err != nil || state != "uploading" {
 		t.Fatal("committed WAL data missing in backup", state, err)
+	}
+}
+
+func TestVersionThreeMigrationKeepsBoundParentsAndCreatesRecoverableBackup(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "v3.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, q := range []string{
+		`PRAGMA journal_mode=WAL`,
+		`CREATE TABLE uploads(id TEXT PRIMARY KEY,owner_id TEXT NOT NULL,request_id TEXT NOT NULL,share_id TEXT NOT NULL,target TEXT NOT NULL,manifest TEXT NOT NULL,staging TEXT NOT NULL,sftp_path TEXT NOT NULL,state TEXT NOT NULL,updated_at TEXT NOT NULL,parent_path TEXT NOT NULL DEFAULT '',parent_identity TEXT NOT NULL DEFAULT '',UNIQUE(owner_id,request_id))`,
+		`INSERT INTO uploads VALUES('old','owner','request','files','t.bin','{}','stage','/stage','uploading','original','资料','identity-v3')`,
+		`PRAGMA user_version=3`,
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	var parent, identity, scope string
+	if err := s.db.QueryRow(`SELECT parent_path,parent_identity,manifest_scope FROM uploads WHERE id='old'`).Scan(&parent, &identity, &scope); err != nil || parent != "资料" || identity != "identity-v3" || scope != "" {
+		t.Fatal(parent, identity, scope, err)
+	}
+	backups, err := filepath.Glob(path + ".pre-v4-*.bak")
+	if err != nil || len(backups) != 1 {
+		t.Fatal(backups, err)
+	}
+	backup, err := sql.Open("sqlite", backups[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer backup.Close()
+	var version int
+	if err := backup.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 3 {
+		t.Fatal("original schema missing", version, err)
+	}
+	if err := backup.QueryRow(`SELECT parent_identity FROM uploads WHERE id='old'`).Scan(&identity); err != nil || identity != "identity-v3" {
+		t.Fatal("backup lost committed parent", identity, err)
 	}
 }

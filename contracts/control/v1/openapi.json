@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "HopSend Agent 控制接口",
-    "version": "0.5.0",
+    "version": "0.6.0",
     "description": "受认证的 HTTPS 控制面，提供健康、能力、授权目录、已发布路径版本和不可变文件清单。目录支持稳定名称排序分页；文件字节通过独立 SFTP 传输。"
   },
   "servers": [
@@ -416,7 +416,7 @@
             }
           }
         },
-        "description": "parent_path 与共享根/父目录身份固定在 SQLite 会话中；暂存留在共享受控临时区，最终发布到 parent_path/target。目录缺失/替换/链接拒绝；旧会话缺少绑定返回 upload_parent_unbound；目标存在不覆盖。"
+        "description": "parent_path 与共享根/父目录身份固定在 SQLite 会话中；暂存留在共享受控临时区，最终发布到 parent_path/target。目录缺失/替换/链接拒绝；旧会话缺少绑定返回 upload_parent_unbound；目标存在不覆盖。 批次可显式使用 manifest_scope=source_snapshot，共用完全相同的源清单；权限仍独立绑定请求的目标共享，不因源命名空间扩大。"
       }
     },
     "/v1/uploads/{upload_id}": {
@@ -1115,6 +1115,14 @@
             "default": "",
             "maxLength": 4096,
             "description": "共享内已有相对父目录；空串/缺省为共享根，非根须有 upload_parent_path 能力。每次恢复/确认/finalize 核验目录身份，不接受链接、..、绝对路径或 .hopsend-uploads。"
+          },
+          "manifest_scope": {
+            "type": "string",
+            "enum": [
+              "",
+              "source_snapshot"
+            ],
+            "description": "缺省仍要求 manifest.share_id 等于目标 share_id。source_snapshot 需 upload_source_snapshot 能力，清单 share_id 仅为源命名空间，目标仍按请求 share_id 独立授权；相同源版本可发送到不同授权共享。会话及恢复必须保留此值。"
           }
         }
       },
@@ -1147,6 +1155,14 @@
             "default": "",
             "maxLength": 4096,
             "description": "共享内已有相对父目录；空串/缺省为共享根，非根须有 upload_parent_path 能力。每次恢复/确认/finalize 核验目录身份，不接受链接、..、绝对路径或 .hopsend-uploads。"
+          },
+          "manifest_scope": {
+            "type": "string",
+            "enum": [
+              "",
+              "source_snapshot"
+            ],
+            "description": "缺省仍要求 manifest.share_id 等于目标 share_id。source_snapshot 需 upload_source_snapshot 能力，清单 share_id 仅为源命名空间，目标仍按请求 share_id 独立授权；相同源版本可发送到不同授权共享。会话及恢复必须保留此值。"
           }
         }
       },

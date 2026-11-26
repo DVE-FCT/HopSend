@@ -15,8 +15,11 @@ import {
   type TaskEvent,
   type PreparationReport,
   type DeviceObservation,
+  type UploadBatch,
 } from "./bridge";
 import UploadPanel from "./components/UploadPanel.vue";
+import BatchTaskList from './components/BatchTaskList.vue';
+import {mergeBatchTasks,batchMatchesFilter} from './batch-upload';
 import DiagnosticPanel from "./components/DiagnosticPanel.vue";
 import Icon from "./components/Icon.vue";
 import PairingWizard from "./components/PairingWizard.vue";
@@ -46,6 +49,7 @@ watch(
   { immediate: true },
 );
 const taskFilter = ref("all");
+const batches=ref<UploadBatch[]>([]);
 const history = ref<TaskEvent[]>([]);
 const preparation = ref<PreparationReport>();
 const preparing = ref("");
@@ -125,6 +129,8 @@ const breadcrumb = computed(() => {
 const active = computed(() =>
   tasks.value.filter((t) =>
     [
+      "queued",
+      "running",
       "connecting",
       "downloading",
       "uploading",
@@ -138,11 +144,11 @@ const active = computed(() =>
 const visibleTasks = computed(() =>
   tasks.value.filter(
     (t) =>
-      taskFilter.value === "all" ||
+      !t.batch_id && (taskFilter.value === "all" ||
       (taskFilter.value === "active" &&
         active.value.some((a) => a.id === t.id)) ||
       (taskFilter.value === "completed" && t.state === "completed") ||
-      (taskFilter.value === "attention" && attentionStates.includes(t.state)),
+      (taskFilter.value === "attention" && attentionStates.includes(t.state))),
   ),
 );
 const totalSpeed = computed(() =>
@@ -287,9 +293,16 @@ async function perform(action: () => Promise<void>, name = "action", failureDevi
     operation.value = "";
   }
 }
-async function refresh() {
+let refreshing:Promise<void>|undefined;
+function refresh():Promise<void> {
+  if(refreshing)return refreshing;
+  refreshing=refreshTasks().finally(()=>{refreshing=undefined;});
+  return refreshing;
+}
+async function refreshTasks() {
   try {
-    tasks.value = await backend().Tasks();
+    const [nextTasks,nextBatches]=await Promise.all([backend().Tasks(),backend().UploadBatches()]);
+    tasks.value=mergeBatchTasks(nextTasks,nextBatches);batches.value=nextBatches;
     refreshedAt.value = new Date().toLocaleTimeString("zh-CN");
     refreshError.value = false;
   } catch (e) {
@@ -645,13 +658,13 @@ onUnmounted(() => {
             刷新状态
           </button>
         </div>
-        <div v-if="!tasks.length" class="empty panel">
+        <div v-if="!tasks.length&&!batches.length" class="empty panel">
           <Icon name="download" />
           <h3>还没有传输任务</h3>
           <p>{{transferMode==='upload'?'选择接收设备、共享父目录和本机内容，接收端校验后发布。':'配对设备后，浏览共享目录并选择已发布版本；也可使用已有清单 ID。'}}</p>
           <button class="secondary" @click="edit()">添加设备</button>
         </div>
-        <div v-if="tasks.length" class="filters" aria-label="任务筛选">
+        <div v-if="tasks.length||batches.length" class="filters" aria-label="任务筛选">
           <button
             v-for="f in [
               { id: 'all', name: '全部' },
@@ -666,7 +679,8 @@ onUnmounted(() => {
             {{ f.name }}
           </button>
         </div>
-        <div v-if="tasks.length && !visibleTasks.length" class="panel empty">
+        <BatchTaskList :batches="batches" :filter="taskFilter" @changed="void perform(refresh)" @diagnose="diagnose" />
+        <div v-if="tasks.length && !visibleTasks.length&&!batches.some(b=>batchMatchesFilter(b,taskFilter))" class="panel empty">
           <Icon name="file" />
           <h3>当前分类没有任务</h3>
           <p>切换分类可查看其他任务。</p>

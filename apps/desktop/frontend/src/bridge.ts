@@ -35,6 +35,7 @@ export interface PathSelection {review_id:string;version?:PathVersion;error?:Bro
 export interface PublicationConfig {revision:string;shares:{id:string;path:string}[]}
 export interface PublicationJob {id:string;state:string;path:string;error?:string;version?:PathVersion}
 export interface Task {
+  batch_id?: string;
   direction: string;
   id: string;
   task_id: string;
@@ -52,6 +53,11 @@ export interface Task {
   eta_seconds: number;
   metrics_available: boolean;
 }
+export interface BatchUploadTarget {device_id:string;share_id:string;parent_path:string;target:string}
+export interface BatchRecipient extends Omit<Task,'name'|'direction'|'manifest_id'|'batch_id'> {
+  device_id:string;device_name:string;share_id:string;parent_path:string;target:string;snapshot_held:boolean;
+}
+export interface UploadBatch {id:string;name:string;manifest_id:string;content_id:string;size_bytes:number;state:string;created_at:string;snapshot_references:number;recipients:BatchRecipient[]}
 export interface NetworkReport {
   observed_at: string;
   path: "direct" | "relay" | "unknown";
@@ -68,6 +74,9 @@ export type TaskEvent = Pick<
   "task_id" | "state" | "error" | "updated_at"
 >;
 interface API {
+  StartBatchUpload(key:string,source:string,targets:BatchUploadTarget[]):Promise<UploadBatch>;
+  UploadBatches():Promise<UploadBatch[]>;
+  ControlUploadBatch(id:string,action:string):Promise<void>;
   InspectPublishedPath(id:string,share:string,path:string):Promise<PathSelection>;
   StartPublishedDownload(review:string,destination:string):Promise<string>;
   ReleasePublishedPath(review:string):Promise<void>;

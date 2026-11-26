@@ -53,6 +53,7 @@ type TaskView struct {
 	Name        string `json:"name"`
 	Destination string `json:"destination"`
 	ManifestID  string `json:"manifest_id"`
+	BatchID     string `json:"batch_id,omitempty"`
 	app.TaskStatus
 }
 
@@ -69,6 +70,7 @@ type App struct {
 	packageReviews      map[string]packageReview
 	pathReviews         map[string]pathReview
 	publisher           *app.PathPublisher
+	batches             *app.BatchUploads
 	packageImporting    bool
 	pairReadLocal       func(context.Context) ([]byte, error)
 	pairLocalAddresses  func() ([]string, error)
@@ -105,6 +107,11 @@ func (a *App) startup(ctx context.Context) {
 	a.store, err = sqlite.Open(a.database)
 	if err != nil {
 		a.startupError = err.Error()
+		return
+	}
+	a.batches, err = app.NewBatchUploads(ctx, a.database, a.manager)
+	if err != nil {
+		a.startupError = err.Error()
 	}
 }
 func (a *App) beforeClose(context.Context) bool {
@@ -113,6 +120,12 @@ func (a *App) beforeClose(context.Context) bool {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
+	if a.batches != nil {
+		if err := a.batches.Close(ctx); err != nil {
+			runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{Type: runtime.ErrorDialog, Title: "等待批次停止", Message: "批次仍在释放快照或写入者，请稍后关闭。"})
+			return true
+		}
+	}
 	if err := a.sourcePublisher().Close(ctx); err != nil {
 		runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{Type: runtime.ErrorDialog, Title: "等待发布停止", Message: "本机发布仍在释放文件，请稍后关闭。"})
 		return true
@@ -334,9 +347,30 @@ func (a *App) startUpload(deviceID, shareID, source, target, parent string) (str
 	}
 	return id, err
 }
-func (a *App) PauseTask(id string) error            { return a.manager.Pause(a.ctx, id) }
-func (a *App) ResumeTask(id string) (string, error) { return a.manager.Resume(a.ctx, id) }
-func (a *App) CancelTask(id string) error           { return a.manager.Cancel(a.ctx, id) }
+func (a *App) PauseTask(id string) error {
+	if a.batches != nil {
+		if found, err := a.batches.ControlTask(a.ctx, id, "pause"); found || err != nil {
+			return err
+		}
+	}
+	return a.manager.Pause(a.ctx, id)
+}
+func (a *App) ResumeTask(id string) (string, error) {
+	if a.batches != nil {
+		if found, err := a.batches.ControlTask(a.ctx, id, "resume"); found || err != nil {
+			return id, err
+		}
+	}
+	return a.manager.Resume(a.ctx, id)
+}
+func (a *App) CancelTask(id string) error {
+	if a.batches != nil {
+		if found, err := a.batches.ControlTask(a.ctx, id, "cancel"); found || err != nil {
+			return err
+		}
+	}
+	return a.manager.Cancel(a.ctx, id)
+}
 func (a *App) Tasks() ([]TaskView, error) {
 	if err := a.Ready(); err != nil {
 		return nil, err
@@ -364,7 +398,7 @@ func (a *App) Tasks() ([]TaskView, error) {
 		if direction == "" {
 			direction = "download"
 		}
-		views = append(views, TaskView{ID: t.ID, Direction: direction, Name: t.Manifest.Name, Destination: t.Destination, ManifestID: t.Manifest.ManifestID, TaskStatus: status})
+		views = append(views, TaskView{ID: t.ID, Direction: direction, Name: t.Manifest.Name, Destination: t.Destination, ManifestID: t.Manifest.ManifestID, BatchID: request.BatchID, TaskStatus: status})
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
