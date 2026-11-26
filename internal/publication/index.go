@@ -87,7 +87,14 @@ func Load(content, shared *os.Root, share, relative string) (v1.PathVersion, err
 	if !shareID.MatchString(share) || ValidatePath(relative) != nil {
 		return zero, ErrStale
 	}
-	file, err := content.Open(recordPath(share, relative))
+	metadata := recordPath(share, relative)
+	if err := CheckPath(content, metadata); err != nil {
+		if os.IsNotExist(err) {
+			return zero, ErrUnpublished
+		}
+		return zero, ErrStale
+	}
+	file, err := content.Open(metadata)
 	if os.IsNotExist(err) {
 		return zero, ErrUnpublished
 	}
@@ -107,6 +114,9 @@ func Load(content, shared *os.Root, share, relative string) (v1.PathVersion, err
 	}
 	identity, err := rootIdentity(shared)
 	if err != nil || identity != saved.RootIdentity {
+		return zero, ErrStale
+	}
+	if CheckPath(content, "manifests/"+saved.Version.ManifestID+".json") != nil || CheckPath(content, "objects/"+saved.Version.ContentID) != nil {
 		return zero, ErrStale
 	}
 	m, err := manifest.Load(content, saved.Version.ManifestID)
@@ -159,12 +169,18 @@ func Publish(ctx context.Context, rootPath, store, share, relative string, chunk
 		source, e1 := filepath.Abs(filepath.Join(rootPath, filepath.FromSlash(relative)))
 		absoluteStore, e2 := filepath.Abs(store)
 		inside, e3 := filepath.Rel(source, absoluteStore)
-		if e1 != nil || e2 != nil || e3 != nil || (inside != ".." && !strings.HasPrefix(inside, ".."+string(filepath.Separator))) {
+		sameVolume := strings.EqualFold(filepath.VolumeName(source), filepath.VolumeName(absoluteStore))
+		if e1 != nil || e2 != nil || (sameVolume && (e3 != nil || (inside != ".." && !strings.HasPrefix(inside, ".."+string(filepath.Separator))))) {
 			return zero, errors.New("内容库不得位于待发布文件夹内")
 		}
 	}
 	if err = os.MkdirAll(store, 0700); err != nil {
 		return zero, err
+	}
+	for _, name := range []string{"objects", "manifests", "index", "publication.lock"} {
+		if err := filesystem.CheckComponents(filepath.Join(store, name)); err != nil {
+			return zero, err
+		}
 	}
 	lock, err := filesystem.Lock(filepath.Join(store, "publication.lock"))
 	if err != nil {
